@@ -7,13 +7,14 @@ import { getLatestMACD } from '../indicators/macd';
 import { getLatestBB } from '../indicators/bollingerBands';
 import { getLatestATR } from '../indicators/atr';
 import { getLatestStochRSI } from '../indicators/stochRsi';
+import { getLatestSuperTrend } from '../indicators/supertrend';
 import { calculateTrendScore } from '../indicators/trendScore';
 import { computeSignal, type Signal } from '../indicators/aiSignal';
 
 export type SortKey =
   | 'symbol' | 'price' | 'change1h' | 'change24h' | 'volume'
   | 'rsi15m' | 'rsi1h' | 'rsi4h' | 'rsi1d'
-  | 'trendScore' | 'signal' | 'macd' | 'ema20' | 'ema50' | 'ema200';
+  | 'trendScore' | 'signal' | 'macd' | 'superTrend';
 
 export type FilterKey =
   | 'all' | 'oversold' | 'overbought' | 'highVolume'
@@ -30,6 +31,7 @@ export interface CoinData {
   rsi1h: number | null;
   rsi4h: number | null;
   rsi1d: number | null;
+  // kept for Trend Score / AI Signal calculations, not displayed
   ema20: number | null;
   ema50: number | null;
   ema200: number | null;
@@ -44,6 +46,8 @@ export interface CoinData {
   atrPercent: number | null;
   stochRsiK: number | null;
   stochRsiD: number | null;
+  superTrend: 1 | -1 | null;
+  superTrendValue: number | null;
   trendScore: number;
   signal: Signal;
   signalReasons: string[];
@@ -82,49 +86,58 @@ export function useMarket() {
   return ctx;
 }
 
-function computeIndicators(symbol: string, klineMap: Record<string, Kline[]>, price: number, change24h: number): Partial<CoinData> {
+function computeIndicators(
+  symbol: string,
+  klineMap: Record<string, Kline[]>,
+  price: number,
+  change24h: number
+): Partial<CoinData> {
   const k15m = klineMap['15m'] || [];
   const k1h = klineMap['1h'] || [];
   const k4h = klineMap['4h'] || [];
   const k1d = klineMap['1d'] || [];
+  const base = k1h; // primary timeframe for most indicators
 
   const closes15m = k15m.map(k => k.close);
-  const closes1h = k1h.map(k => k.close);
+  const closes1h = base.map(k => k.close);
   const closes4h = k4h.map(k => k.close);
   const closes1d = k1d.map(k => k.close);
-  const closesForIndicators = closes1h;
 
   const rsi15m = getLatestRSI(closes15m, 14);
-  const rsi1h = getLatestRSI(closes1h, 14);
-  const rsi4h = getLatestRSI(closes4h, 14);
-  const rsi1d = getLatestRSI(closes1d, 14);
+  const rsi1h  = getLatestRSI(closes1h,  14);
+  const rsi4h  = getLatestRSI(closes4h,  14);
+  const rsi1d  = getLatestRSI(closes1d,  14);
 
-  const ema20 = getLatestEMA(closesForIndicators, 20);
-  const ema50 = getLatestEMA(closesForIndicators, 50);
-  const ema200 = getLatestEMA(closesForIndicators, 200);
+  // EMA kept for Trend Score / AI Signal — not displayed
+  const ema20  = getLatestEMA(closes1h, 20);
+  const ema50  = getLatestEMA(closes1h, 50);
+  const ema200 = getLatestEMA(closes1h, 200);
 
-  const macdResult = getLatestMACD(closesForIndicators);
-  const macd = macdResult?.macd ?? null;
-  const macdSignal = macdResult?.signal ?? null;
+  const macdResult    = getLatestMACD(closes1h);
+  const macd          = macdResult?.macd      ?? null;
+  const macdSignal    = macdResult?.signal    ?? null;
   const macdHistogram = macdResult?.histogram ?? null;
 
-  const bbResult = getLatestBB(closesForIndicators);
-  const bbUpper = bbResult?.upper ?? null;
-  const bbMiddle = bbResult?.middle ?? null;
-  const bbLower = bbResult?.lower ?? null;
+  const bbResult = getLatestBB(closes1h);
+  const bbUpper  = bbResult?.upper    ?? null;
+  const bbMiddle = bbResult?.middle   ?? null;
+  const bbLower  = bbResult?.lower    ?? null;
   const bbPercent = bbResult?.percentB ?? null;
 
-  const atr = getLatestATR(k1h, 14);
+  const atr        = getLatestATR(base, 14);
   const atrPercent = atr !== null && price > 0 ? (atr / price) * 100 : null;
 
-  const stochRsiResult = getLatestStochRSI(closesForIndicators);
-  const stochRsiK = stochRsiResult?.k ?? null;
-  const stochRsiD = stochRsiResult?.d ?? null;
+  const stochResult = getLatestStochRSI(closes1h);
+  const stochRsiK   = stochResult?.k ?? null;
+  const stochRsiD   = stochResult?.d ?? null;
 
-  // Calculate 1h price change from kline
+  const stResult       = getLatestSuperTrend(base);
+  const superTrend      = stResult?.trend ?? null;
+  const superTrendValue = stResult?.value ?? null;
+
   let priceChange1h = 0;
-  if (k1h.length >= 2) {
-    const prevOpen = k1h[k1h.length - 2].open;
+  if (base.length >= 2) {
+    const prevOpen = base[base.length - 2].open;
     if (prevOpen > 0) priceChange1h = ((price - prevOpen) / prevOpen) * 100;
   }
 
@@ -146,6 +159,7 @@ function computeIndicators(symbol: string, klineMap: Record<string, Kline[]>, pr
     bbUpper, bbMiddle, bbLower, bbPercent,
     atr, atrPercent,
     stochRsiK, stochRsiD,
+    superTrend, superTrendValue,
     priceChange1h, trendScore,
     signal: signalResult.signal,
     signalReasons: signalResult.reasons,
@@ -154,58 +168,50 @@ function computeIndicators(symbol: string, klineMap: Record<string, Kline[]>, pr
 }
 
 export function MarketProvider({ children }: { children: React.ReactNode }) {
-  const [coins, setCoins] = useState<CoinData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [wsConnected, setWsConnected] = useState(false);
+  const [coins, setCoins]                 = useState<CoinData[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [error, setError]                 = useState<string | null>(null);
+  const [wsConnected, setWsConnected]     = useState(false);
   const [wsReconnecting, setWsReconnecting] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [sortKey, setSortKey] = useState<SortKey>('volume');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [filter, setFilter] = useState<FilterKey>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [rsiTimeframe, setRsiTimeframe] = useState<'15m' | '1h' | '4h' | '1d'>('1h');
+  const [sortKey, setSortKey]             = useState<SortKey>('volume');
+  const [sortDir, setSortDir]             = useState<'asc' | 'desc'>('desc');
+  const [filter, setFilter]               = useState<FilterKey>('all');
+  const [searchQuery, setSearchQuery]     = useState('');
+  const [rsiTimeframe, setRsiTimeframe]   = useState<'15m' | '1h' | '4h' | '1d'>('1h');
 
-  const wsRef = useRef<BinanceWebSocket | null>(null);
-  const coinsRef = useRef<CoinData[]>([]);
-  const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-
-  coinsRef.current = coins;
+  const wsRef            = useRef<BinanceWebSocket | null>(null);
+  const flashTimersRef   = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const handleWSMessage = useCallback((updates: TickerUpdate[]) => {
     setCoins(prev => {
       const map = new Map(prev.map(c => [c.symbol, c]));
       let changed = false;
-      const now = Date.now();
       for (const upd of updates) {
         const existing = map.get(upd.symbol);
         if (!existing) continue;
-        const newPrice = parseFloat(upd.close);
+        const newPrice    = parseFloat(upd.close);
         const newChange24h = parseFloat(upd.changePercent);
-        const newVolume = parseFloat(upd.quoteVolume);
+        const newVolume   = parseFloat(upd.quoteVolume);
         if (Math.abs(newPrice - existing.price) < 1e-12) continue;
-        const flashUp = newPrice > existing.price;
-        const flashDown = newPrice < existing.price;
         map.set(upd.symbol, {
           ...existing,
           price: newPrice,
           priceChange24h: newChange24h,
           volume24h: newVolume,
-          flashUp, flashDown,
+          flashUp:   newPrice > existing.price,
+          flashDown: newPrice < existing.price,
         });
         changed = true;
-        // Clear flash after 800ms
         const key = upd.symbol;
-        const existingTimer = flashTimersRef.current.get(key);
-        if (existingTimer) clearTimeout(existingTimer);
-        const timer = setTimeout(() => {
+        const t = flashTimersRef.current.get(key);
+        if (t) clearTimeout(t);
+        flashTimersRef.current.set(key, setTimeout(() => {
           setCoins(p => p.map(c => c.symbol === key ? { ...c, flashUp: false, flashDown: false } : c));
           flashTimersRef.current.delete(key);
-        }, 800);
-        flashTimersRef.current.set(key, timer);
+        }, 800));
       }
-      if (!changed) return prev;
-      return Array.from(map.values());
+      return changed ? Array.from(map.values()) : prev;
     });
   }, []);
 
@@ -218,7 +224,6 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError(null);
     setLoadingProgress(0);
-
     try {
       const tickers = await getTopUSDTPairs(100);
       setLoadingProgress(5);
@@ -236,6 +241,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         bbUpper: null, bbMiddle: null, bbLower: null, bbPercent: null,
         atr: null, atrPercent: null,
         stochRsiK: null, stochRsiD: null,
+        superTrend: null, superTrendValue: null,
         trendScore: 50, signal: 'NEUTRAL', signalReasons: [],
         indicatorsLoaded: false,
       }));
@@ -243,22 +249,17 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
 
       const symbols = initialCoins.map(c => c.symbol);
-      const total = symbols.length;
-      let done = 0;
+      const total   = symbols.length;
 
-      const klineMap = await batchFetchKlines(symbols, 5, (d) => {
-        done = d;
+      const klineMap = await batchFetchKlines(symbols, 5, (done) => {
         setLoadingProgress(5 + Math.round((done / total) * 90));
       });
 
-      setCoins(prev => {
-        return prev.map(coin => {
-          const klines = klineMap.get(coin.symbol);
-          if (!klines) return coin;
-          const indicators = computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h);
-          return { ...coin, ...indicators };
-        });
-      });
+      setCoins(prev => prev.map(coin => {
+        const klines = klineMap.get(coin.symbol);
+        if (!klines) return coin;
+        return { ...coin, ...computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h) };
+      }));
 
       setLoadingProgress(100);
     } catch (err: any) {
@@ -281,10 +282,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
   const handleSort = useCallback((key: SortKey) => {
     setSortKey(prev => {
-      if (prev === key) {
-        setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-        return prev;
-      }
+      if (prev === key) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); return prev; }
       setSortDir('desc');
       return key;
     });
@@ -293,13 +291,11 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const filteredCoins = useMemo(() => {
     let result = [...coins];
 
-    // Search
     if (searchQuery) {
       const q = searchQuery.toUpperCase();
       result = result.filter(c => c.baseAsset.includes(q) || c.symbol.includes(q));
     }
 
-    // Filter
     switch (filter) {
       case 'oversold':
         result = result.filter(c => {
@@ -313,11 +309,9 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
           return r !== null && r > 70;
         });
         break;
-      case 'highVolume': {
-        const sorted = [...result].sort((a, b) => b.volume24h - a.volume24h);
-        result = sorted.slice(0, 20);
+      case 'highVolume':
+        result = [...result].sort((a, b) => b.volume24h - a.volume24h).slice(0, 20);
         break;
-      }
       case 'topGainers':
         result = result.filter(c => c.priceChange24h > 0).sort((a, b) => b.priceChange24h - a.priceChange24h).slice(0, 30);
         break;
@@ -332,31 +326,27 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         break;
     }
 
-    // Sort
     result.sort((a, b) => {
       let av: number, bv: number;
       switch (sortKey) {
-        case 'symbol': av = a.baseAsset < b.baseAsset ? -1 : 1; bv = 0; break;
-        case 'price': av = a.price; bv = b.price; break;
-        case 'change1h': av = a.priceChange1h; bv = b.priceChange1h; break;
-        case 'change24h': av = a.priceChange24h; bv = b.priceChange24h; break;
-        case 'volume': av = a.volume24h; bv = b.volume24h; break;
-        case 'rsi15m': av = a.rsi15m ?? -1; bv = b.rsi15m ?? -1; break;
-        case 'rsi1h': av = a.rsi1h ?? -1; bv = b.rsi1h ?? -1; break;
-        case 'rsi4h': av = a.rsi4h ?? -1; bv = b.rsi4h ?? -1; break;
-        case 'rsi1d': av = a.rsi1d ?? -1; bv = b.rsi1d ?? -1; break;
-        case 'trendScore': av = a.trendScore; bv = b.trendScore; break;
+        case 'symbol':     return sortDir === 'asc' ? (a.baseAsset < b.baseAsset ? -1 : 1) : (a.baseAsset > b.baseAsset ? -1 : 1);
+        case 'price':      av = a.price;        bv = b.price;        break;
+        case 'change1h':   av = a.priceChange1h; bv = b.priceChange1h; break;
+        case 'change24h':  av = a.priceChange24h; bv = b.priceChange24h; break;
+        case 'volume':     av = a.volume24h;    bv = b.volume24h;    break;
+        case 'rsi15m':     av = a.rsi15m ?? -1; bv = b.rsi15m ?? -1; break;
+        case 'rsi1h':      av = a.rsi1h  ?? -1; bv = b.rsi1h  ?? -1; break;
+        case 'rsi4h':      av = a.rsi4h  ?? -1; bv = b.rsi4h  ?? -1; break;
+        case 'rsi1d':      av = a.rsi1d  ?? -1; bv = b.rsi1d  ?? -1; break;
+        case 'trendScore': av = a.trendScore;   bv = b.trendScore;   break;
+        case 'macd':       av = a.macdHistogram ?? -999; bv = b.macdHistogram ?? -999; break;
+        case 'superTrend': av = a.superTrend ?? 0; bv = b.superTrend ?? 0; break;
         case 'signal': {
-          const order: Record<string, number> = { STRONG_BUY: 5, BUY: 4, NEUTRAL: 3, SELL: 2, STRONG_SELL: 1 };
-          av = order[a.signal] ?? 3; bv = order[b.signal] ?? 3; break;
+          const o: Record<string, number> = { STRONG_BUY: 5, BUY: 4, NEUTRAL: 3, SELL: 2, STRONG_SELL: 1 };
+          av = o[a.signal] ?? 3; bv = o[b.signal] ?? 3; break;
         }
-        case 'macd': av = a.macdHistogram ?? -999; bv = b.macdHistogram ?? -999; break;
-        case 'ema20': av = a.price - (a.ema20 ?? a.price); bv = b.price - (b.ema20 ?? b.price); break;
-        case 'ema50': av = a.price - (a.ema50 ?? a.price); bv = b.price - (b.ema50 ?? b.price); break;
-        case 'ema200': av = a.price - (a.ema200 ?? a.price); bv = b.price - (b.ema200 ?? b.price); break;
         default: av = a.volume24h; bv = b.volume24h;
       }
-      if (sortKey === 'symbol') return sortDir === 'asc' ? (av as any) : -(av as any);
       return sortDir === 'asc' ? av - bv : bv - av;
     });
 

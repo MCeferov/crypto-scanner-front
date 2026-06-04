@@ -1,15 +1,30 @@
 import React, { useMemo } from 'react';
 import { useMarket } from '../../context/MarketContext';
-import { formatVolume, formatRSI, formatPercent, formatSymbol } from '../../utils/formatters';
-import { getChangeColor, getTrendScoreColor } from '../../utils/colors';
+import { formatVolume, formatSymbol } from '../../utils/formatters';
+import { getTrendScoreColor } from '../../utils/colors';
 
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+function Stat({
+  label, value, sub, color, accent,
+}: {
+  label: string; value: string; sub?: string; color?: string; accent?: boolean;
+}) {
   return (
-    <div className="rounded-lg px-4 py-3 flex-1 min-w-[140px]"
-      style={{ background: 'hsl(222,20%,11%)', border: '1px solid hsl(222,15%,17%)' }}>
-      <div className="text-xs mb-1" style={{ color: '#8b949e' }}>{label}</div>
-      <div className="font-bold text-sm truncate" style={{ color: color || '#e6e8ec' }}>{value}</div>
-      {sub && <div className="text-xs mt-0.5 truncate" style={{ color: '#8b949e' }}>{sub}</div>}
+    <div
+      className="flex flex-col justify-between rounded-lg px-4 py-3"
+      style={{
+        background: accent ? 'hsl(222,20%,11%)' : 'hsl(222,20%,10%)',
+        border: `1px solid ${accent ? 'hsl(222,15%,20%)' : 'hsl(222,15%,15%)'}`,
+        minWidth: 120,
+        flex: '1 1 0',
+      }}
+    >
+      <span style={{ color: '#4b5563', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+        {label}
+      </span>
+      <span className="font-mono font-bold mt-1 truncate" style={{ color: color || '#d1d5db', fontSize: 14 }}>
+        {value}
+      </span>
+      {sub && <span className="truncate mt-0.5" style={{ color: '#374151', fontSize: 10 }}>{sub}</span>}
     </div>
   );
 }
@@ -17,81 +32,81 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 export function MarketSummary() {
   const { coins } = useMarket();
 
-  const summary = useMemo(() => {
+  const s = useMemo(() => {
     if (coins.length === 0) return null;
     const loaded = coins.filter(c => c.indicatorsLoaded);
-    const avgRsi = loaded.length > 0
-      ? loaded.filter(c => c.rsi1h !== null).reduce((s, c) => s + (c.rsi1h ?? 0), 0) / loaded.filter(c => c.rsi1h !== null).length
-      : 0;
-    const avgTrend = loaded.length > 0
-      ? loaded.reduce((s, c) => s + c.trendScore, 0) / loaded.length
+    const withRsi = loaded.filter(c => c.rsi1h !== null);
+    const avgRsi = withRsi.length > 0
+      ? withRsi.reduce((a, c) => a + (c.rsi1h ?? 0), 0) / withRsi.length
+      : null;
+    const avgScore = loaded.length > 0
+      ? Math.round(loaded.reduce((a, c) => a + c.trendScore, 0) / loaded.length)
       : 50;
-    const byVolume = [...coins].sort((a, b) => b.volume24h - a.volume24h);
-    const topVolume = byVolume[0];
-    const byTrend = [...loaded].sort((a, b) => b.trendScore - a.trendScore);
-    const strongest = byTrend[0];
-    const weakest = byTrend[byTrend.length - 1];
-    const oversold = loaded.filter(c => c.rsi1h !== null && c.rsi1h < 30).length;
-    const overbought = loaded.filter(c => c.rsi1h !== null && c.rsi1h > 70).length;
-    const strongBuys = loaded.filter(c => c.signal === 'STRONG_BUY').length;
-    const strongSells = loaded.filter(c => c.signal === 'STRONG_SELL').length;
-    const totalVol = coins.reduce((s, c) => s + c.volume24h, 0);
-    return { avgRsi, avgTrend, topVolume, strongest, weakest, oversold, overbought, strongBuys, strongSells, totalVol };
+    const totalVol = coins.reduce((a, c) => a + c.volume24h, 0);
+    const oversold = withRsi.filter(c => (c.rsi1h ?? 50) < 30).length;
+    const overbought = withRsi.filter(c => (c.rsi1h ?? 50) > 70).length;
+    const bulls = loaded.filter(c => c.superTrend === 1).length;
+    const bears = loaded.filter(c => c.superTrend === -1).length;
+    const topVolume = [...coins].sort((a, b) => b.volume24h - a.volume24h)[0];
+    const topScore = [...loaded].sort((a, b) => b.trendScore - a.trendScore)[0];
+
+    return { avgRsi, avgScore, totalVol, oversold, overbought, bulls, bears, topVolume, topScore, loaded: loaded.length, total: coins.length };
   }, [coins]);
 
-  if (!summary) return null;
+  if (!s) return null;
+
+  const rsiColor = s.avgRsi === null ? '#6b7280'
+    : s.avgRsi < 30 ? '#0ecb81' : s.avgRsi < 40 ? '#36b37e'
+    : s.avgRsi > 70 ? '#f6465d' : s.avgRsi > 60 ? '#f3a52f' : '#9ca3af';
+
+  const bullRatio = s.bulls + s.bears > 0 ? s.bulls / (s.bulls + s.bears) : 0.5;
 
   return (
-    <div className="px-4 py-3 space-y-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <StatCard
-          label="Total Coins"
-          value={`${coins.length}`}
-          sub={`${coins.filter(c => c.indicatorsLoaded).length} loaded`}
+    <div className="px-4 py-3">
+      <div className="flex gap-2 flex-wrap">
+        <Stat
+          label="Pairs"
+          value={`${s.total}`}
+          sub={`${s.loaded} loaded`}
         />
-        <StatCard
-          label="Avg RSI (1H)"
-          value={formatRSI(summary.avgRsi)}
-          sub={summary.avgRsi < 40 ? 'Market Oversold' : summary.avgRsi > 60 ? 'Market Overbought' : 'Neutral'}
-          color={summary.avgRsi < 30 ? '#0ecb81' : summary.avgRsi > 70 ? '#f6465d' : summary.avgRsi < 40 ? '#36b37e' : summary.avgRsi > 60 ? '#f3a52f' : '#e6e8ec'}
+        <Stat
+          label="Avg RSI · 1H"
+          value={s.avgRsi !== null ? s.avgRsi.toFixed(1) : '—'}
+          sub={s.avgRsi === null ? '' : s.avgRsi < 40 ? 'Market oversold' : s.avgRsi > 60 ? 'Market overbought' : 'Neutral zone'}
+          color={rsiColor}
+          accent
         />
-        <StatCard
+        <Stat
           label="Avg Trend Score"
-          value={summary.avgTrend.toFixed(0)}
-          sub="Market momentum"
-          color={getTrendScoreColor(summary.avgTrend)}
+          value={`${s.avgScore}`}
+          sub={s.avgScore >= 60 ? 'Bullish momentum' : s.avgScore <= 40 ? 'Bearish momentum' : 'Neutral'}
+          color={getTrendScoreColor(s.avgScore)}
+          accent
         />
-        <StatCard
+        <Stat
           label="24H Volume"
-          value={formatVolume(summary.totalVol)}
-          sub={summary.topVolume ? `Top: ${formatSymbol(summary.topVolume.symbol)}` : ''}
+          value={formatVolume(s.totalVol)}
+          sub={s.topVolume ? `Top: ${formatSymbol(s.topVolume.symbol)}` : ''}
         />
-        <StatCard
-          label="Oversold / Overbought"
-          value={`${summary.oversold} / ${summary.overbought}`}
-          sub="RSI 1H <30 / >70"
-          color={summary.oversold > summary.overbought ? '#0ecb81' : summary.overbought > summary.oversold ? '#f6465d' : '#e6e8ec'}
+        <Stat
+          label="RSI Zones"
+          value={`${s.oversold} / ${s.overbought}`}
+          sub="Oversold / Overbought"
+          color={s.oversold > s.overbought ? '#0ecb81' : s.overbought > s.oversold ? '#f6465d' : '#9ca3af'}
         />
-        <StatCard
-          label="Signals"
-          value={`${summary.strongBuys} Buy / ${summary.strongSells} Sell`}
-          sub="Strong signals"
-          color={summary.strongBuys > summary.strongSells ? '#0ecb81' : '#f6465d'}
+        <Stat
+          label="SuperTrend"
+          value={`${s.bulls}▲ · ${s.bears}▼`}
+          sub={`${Math.round(bullRatio * 100)}% bullish`}
+          color={bullRatio > 0.5 ? '#0ecb81' : bullRatio < 0.5 ? '#f6465d' : '#9ca3af'}
+          accent
         />
-        {summary.strongest && (
-          <StatCard
-            label="Strongest"
-            value={formatSymbol(summary.strongest.symbol)}
-            sub={`Score: ${summary.strongest.trendScore}`}
+        {s.topScore && (
+          <Stat
+            label="Top Score"
+            value={formatSymbol(s.topScore.symbol)}
+            sub={`Score ${s.topScore.trendScore}`}
             color="#0ecb81"
-          />
-        )}
-        {summary.weakest && (
-          <StatCard
-            label="Weakest"
-            value={formatSymbol(summary.weakest.symbol)}
-            sub={`Score: ${summary.weakest.trendScore}`}
-            color="#f6465d"
           />
         )}
       </div>
