@@ -73,5 +73,9 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "3.13.12",
+    "lightweight-charts": "5.0.8"
   }
 }

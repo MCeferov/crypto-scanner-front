@@ -33,23 +33,42 @@
   --radius-lg: var(--radius);
 }
 
+/* ─── Design tokens ───────────────────────────────────────────────
+   Palette: TradingView-style tünd navy – qara deyil, dərinlikli
+   ─────────────────────────────────────────────────────────────── */
 :root {
-  --background: 222 20% 7%;
-  --foreground: 210 14% 88%;
-  --card: 222 20% 10%;
-  --card-foreground: 210 14% 88%;
-  --border: 222 15% 17%;
-  --input: 222 15% 17%;
-  --ring: 43 90% 50%;
-  --primary: 43 90% 50%;
-  --primary-foreground: 222 20% 7%;
-  --secondary: 222 15% 15%;
-  --secondary-foreground: 210 14% 75%;
-  --muted: 222 15% 13%;
-  --muted-foreground: 210 10% 52%;
-  --accent: 222 15% 15%;
-  --accent-foreground: 210 14% 88%;
-  --destructive: 354 80% 60%;
+  /* Surfaces */
+  --bg:          #0f1624;   /* ana fon – tünd navy */
+  --surface:     #152232;   /* kartlar / panellər   */
+  --elevated:    #1b2d40;   /* yüksəlmiş element   */
+  --border:      #253347;   /* kənar xətti         */
+  --border-lite: #2d3f52;   /* açıq kənar          */
+
+  /* Text */
+  --text:        #d8e4f0;   /* əsas mətn           */
+  --muted:       #7e95ad;   /* solğun mətn         */
+  --dim:         #4a5e72;   /* çox solğun          */
+
+  /* Accent */
+  --accent:      #f0b90b;   /* Binance gold        */
+
+  /* Tailwind CSS vars */
+  --background:       212 28% 11%;
+  --foreground:       210 33% 89%;
+  --card:             212 26% 15%;
+  --card-foreground:  210 33% 89%;
+  --border:           211 24% 22%;
+  --input:            211 24% 22%;
+  --ring:             43 90% 50%;
+  --primary:          43 90% 50%;
+  --primary-foreground: 212 28% 11%;
+  --secondary:        212 24% 20%;
+  --secondary-foreground: 210 20% 72%;
+  --muted:            212 22% 18%;
+  --muted-foreground: 212 18% 56%;
+  --accent:           212 22% 20%;
+  --accent-foreground: 210 33% 89%;
+  --destructive:      354 80% 60%;
   --destructive-foreground: 0 0% 100%;
   --chart-1: 145 78% 41%;
   --chart-2: 354 86% 62%;
@@ -67,161 +86,61 @@
     box-sizing: border-box;
   }
   body {
-    @apply bg-background text-foreground font-sans antialiased;
-    background-color: hsl(222, 20%, 7%);
-    color: hsl(210, 14%, 88%);
+    @apply font-sans antialiased;
+    background-color: var(--bg);
+    color: var(--text);
   }
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: hsl(222, 20%, 9%);
-  }
-  ::-webkit-scrollbar-thumb {
-    background: hsl(222, 15%, 22%);
-    border-radius: 3px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: hsl(222, 15%, 30%);
-  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-lite); }
 }
 
-/* RSI color utilities */
-.rsi-strong-oversold {
-  background-color: rgba(14, 203, 129, 0.2);
-  color: #0ecb81;
-}
-.rsi-oversold {
-  background-color: rgba(54, 179, 126, 0.15);
-  color: #36b37e;
-}
-.rsi-neutral {
-  background-color: rgba(74, 79, 92, 0.2);
-  color: #8b949e;
-}
-.rsi-overbought {
-  background-color: rgba(243, 165, 47, 0.18);
-  color: #f3a52f;
-}
-.rsi-strong-overbought {
-  background-color: rgba(246, 70, 93, 0.2);
-  color: #f6465d;
-}
+/* ─── RSI cells ─────────────────────────────────────────────────── */
+.rsi-strong-oversold  { background: rgba(38,166,154,.18); color: #26a69a; }
+.rsi-oversold         { background: rgba(38,166,154,.10); color: #4db6ac; }
+.rsi-neutral          { background: rgba(100,116,139,.12); color: #94a3b8; }
+.rsi-overbought       { background: rgba(243,165,47,.12);  color: #f3a52f; }
+.rsi-strong-overbought{ background: rgba(239,83,80,.18);   color: #ef5350; }
 
-/* Price change colors */
-.price-up { color: #0ecb81; }
-.price-down { color: #f6465d; }
-.price-neutral { color: #8b949e; }
+/* ─── Signal badges ─────────────────────────────────────────────── */
+.signal-strong-buy  { background: rgba(38,166,154,.14); color: #26a69a; border: 1px solid rgba(38,166,154,.28); }
+.signal-buy         { background: rgba(77,182,172,.10); color: #4db6ac; border: 1px solid rgba(77,182,172,.22); }
+.signal-neutral     { background: rgba(100,116,139,.10); color: #94a3b8; border: 1px solid rgba(100,116,139,.20); }
+.signal-sell        { background: rgba(243,165,47,.10); color: #f3a52f; border: 1px solid rgba(243,165,47,.22); }
+.signal-strong-sell { background: rgba(239,83,80,.14); color: #ef5350; border: 1px solid rgba(239,83,80,.28); }
 
-/* Signal badges */
-.signal-strong-buy {
-  background: rgba(14, 203, 129, 0.15);
-  color: #0ecb81;
-  border: 1px solid rgba(14, 203, 129, 0.3);
-}
-.signal-buy {
-  background: rgba(54, 179, 126, 0.12);
-  color: #36b37e;
-  border: 1px solid rgba(54, 179, 126, 0.25);
-}
-.signal-neutral {
-  background: rgba(139, 148, 158, 0.1);
-  color: #8b949e;
-  border: 1px solid rgba(139, 148, 158, 0.2);
-}
-.signal-sell {
-  background: rgba(243, 165, 47, 0.12);
-  color: #f3a52f;
-  border: 1px solid rgba(243, 165, 47, 0.25);
-}
-.signal-strong-sell {
-  background: rgba(246, 70, 93, 0.15);
-  color: #f6465d;
-  border: 1px solid rgba(246, 70, 93, 0.3);
-}
+/* ─── Flash rows ────────────────────────────────────────────────── */
+@keyframes flashGreen { 0% { background-color: rgba(38,166,154,.30); } 100% { background-color: transparent; } }
+@keyframes flashRed   { 0% { background-color: rgba(239,83,80,.30);  } 100% { background-color: transparent; } }
+.flash-up   { animation: flashGreen 0.8s ease-out; }
+.flash-down { animation: flashRed   0.8s ease-out; }
 
-/* Flash animations */
-@keyframes flashGreen {
-  0% { background-color: rgba(14, 203, 129, 0.35); }
-  100% { background-color: transparent; }
-}
-@keyframes flashRed {
-  0% { background-color: rgba(246, 70, 93, 0.35); }
-  100% { background-color: transparent; }
-}
-.flash-up { animation: flashGreen 0.8s ease-out; }
-.flash-down { animation: flashRed 0.8s ease-out; }
-
-/* Sticky table header */
+/* ─── Table header ──────────────────────────────────────────────── */
 .heatmap-table thead th {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: hsl(222, 20%, 9%);
-  border-bottom: 1px solid hsl(222, 15%, 17%);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
 }
 
-/* Trend score bar */
-.trend-bar {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #f6465d, #f3a52f, #0ecb81);
-  position: relative;
-}
-.trend-bar-indicator {
-  position: absolute;
-  top: -3px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: white;
-  transform: translateX(-50%);
-}
-
-/* Loading skeleton */
+/* ─── Skeleton loader ───────────────────────────────────────────── */
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, hsl(222, 15%, 14%) 25%, hsl(222, 15%, 18%) 50%, hsl(222, 15%, 14%) 75%);
+  background: linear-gradient(90deg, #1b2d40 25%, #22374f 50%, #1b2d40 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 4px;
 }
 
-/* Progress bar for loading */
+/* ─── Loading progress bar ──────────────────────────────────────── */
 .loading-progress {
   height: 3px;
   background: linear-gradient(90deg, #f0b90b, #f3a52f);
   border-radius: 2px;
   transition: width 0.3s ease;
 }
-
-/* Tooltip */
-.tooltip {
-  position: relative;
-}
-.tooltip:hover .tooltip-content {
-  display: block;
-}
-.tooltip-content {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: hsl(222, 20%, 13%);
-  border: 1px solid hsl(222, 15%, 22%);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 11px;
-  white-space: nowrap;
-  z-index: 100;
-  pointer-events: none;
-}
-
-/* EMA position indicator */
-.ema-above { color: #0ecb81; }
-.ema-below { color: #f6465d; }

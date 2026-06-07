@@ -12,19 +12,19 @@ function Stat({
     <div
       className="flex flex-col justify-between rounded-lg px-4 py-3"
       style={{
-        background: accent ? 'hsl(222,20%,11%)' : 'hsl(222,20%,10%)',
-        border: `1px solid ${accent ? 'hsl(222,15%,20%)' : 'hsl(222,15%,15%)'}`,
+        background: accent ? 'var(--surface)' : 'var(--bg)',
+        border: `1px solid ${accent ? 'var(--border-lite)' : 'var(--border)'}`,
         minWidth: 120,
         flex: '1 1 0',
       }}
     >
-      <span style={{ color: '#4b5563', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+      <span style={{ color: 'var(--dim)', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
         {label}
       </span>
-      <span className="font-mono font-bold mt-1 truncate" style={{ color: color || '#d1d5db', fontSize: 14 }}>
+      <span className="font-mono font-bold mt-1 truncate" style={{ color: color || 'var(--text)', fontSize: 14 }}>
         {value}
       </span>
-      {sub && <span className="truncate mt-0.5" style={{ color: '#374151', fontSize: 10 }}>{sub}</span>}
+      {sub && <span className="truncate mt-0.5" style={{ color: 'var(--dim)', fontSize: 10 }}>{sub}</span>}
     </div>
   );
 }
@@ -35,16 +35,16 @@ export function MarketSummary() {
   const s = useMemo(() => {
     if (coins.length === 0) return null;
     const loaded = coins.filter(c => c.indicatorsLoaded);
-    const withRsi = loaded.filter(c => c.rsi1h !== null);
+    const withRsi = loaded.filter(c => c.rsi15m !== null);
     const avgRsi = withRsi.length > 0
-      ? withRsi.reduce((a, c) => a + (c.rsi1h ?? 0), 0) / withRsi.length
+      ? withRsi.reduce((a, c) => a + (c.rsi15m ?? 0), 0) / withRsi.length
       : null;
     const avgScore = loaded.length > 0
       ? Math.round(loaded.reduce((a, c) => a + c.trendScore, 0) / loaded.length)
       : 50;
     const totalVol = coins.reduce((a, c) => a + c.volume24h, 0);
-    const oversold = withRsi.filter(c => (c.rsi1h ?? 50) < 30).length;
-    const overbought = withRsi.filter(c => (c.rsi1h ?? 50) > 70).length;
+    const oversold   = withRsi.filter(c => (c.rsi15m ?? 50) < 30).length;
+    const overbought = withRsi.filter(c => (c.rsi15m ?? 50) > 70).length;
     const bulls = loaded.filter(c => c.superTrend === 1).length;
     const bears = loaded.filter(c => c.superTrend === -1).length;
     const topVolume = [...coins].sort((a, b) => b.volume24h - a.volume24h)[0];
@@ -70,7 +70,7 @@ export function MarketSummary() {
           sub={`${s.loaded} loaded`}
         />
         <Stat
-          label="Avg RSI · 1H"
+          label="Avg RSI · 15m"
           value={s.avgRsi !== null ? s.avgRsi.toFixed(1) : '—'}
           sub={s.avgRsi === null ? '' : s.avgRsi < 40 ? 'Market oversold' : s.avgRsi > 60 ? 'Market overbought' : 'Neutral zone'}
           color={rsiColor}

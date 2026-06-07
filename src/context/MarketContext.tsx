@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { getTopUSDTPairs, batchFetchKlines, type Ticker24h, type Kline } from '../services/binanceApi';
+import { getTopUSDTPairs, batchFetchKlines, hasMinimumKlineData, type Ticker24h, type Kline } from '../services/binanceApi';
 import { BinanceWebSocket, type TickerUpdate } from '../websocket/BinanceWebSocket';
 import { getLatestRSI } from '../indicators/rsi';
 import { getLatestEMA } from '../indicators/ema';
@@ -19,6 +19,11 @@ export type SortKey =
 export type FilterKey =
   | 'all' | 'oversold' | 'overbought' | 'highVolume'
   | 'topGainers' | 'topLosers' | 'strongBuy' | 'strongSell';
+
+/** RSI timeframe column visibility */
+export type RsiTf = '15m' | '1h' | '4h' | '1d';
+export const ALL_RSI_TFS: RsiTf[] = ['15m', '1h', '4h', '1d'];
+export const RSI_TF_SORT: Record<RsiTf, SortKey> = { '15m': 'rsi15m', '1h': 'rsi1h', '4h': 'rsi4h', '1d': 'rsi1d' };
 
 export interface CoinData {
   symbol: string;
@@ -68,13 +73,13 @@ interface MarketContextType {
   sortDir: 'asc' | 'desc';
   filter: FilterKey;
   searchQuery: string;
-  rsiTimeframe: '15m' | '1h' | '4h' | '1d';
+  visibleRsiCols: RsiTf[];
   setSortKey: (key: SortKey) => void;
   setSortDir: (dir: 'asc' | 'desc') => void;
   setFilter: (filter: FilterKey) => void;
   setSearchQuery: (q: string) => void;
-  setRsiTimeframe: (tf: '15m' | '1h' | '4h' | '1d') => void;
   handleSort: (key: SortKey) => void;
+  toggleRsiCol: (tf: RsiTf) => void;
   refresh: () => void;
 }
 
@@ -152,6 +157,8 @@ function computeIndicators(
     price, ema50, ema200, stochRsiK, priceChange24h: change24h,
   });
 
+  const indicatorsLoaded = hasMinimumKlineData(klineMap);
+
   return {
     rsi15m, rsi1h, rsi4h, rsi1d,
     ema20, ema50, ema200,
@@ -163,7 +170,7 @@ function computeIndicators(
     priceChange1h, trendScore,
     signal: signalResult.signal,
     signalReasons: signalResult.reasons,
-    indicatorsLoaded: true,
+    indicatorsLoaded,
   };
 }
 
@@ -174,12 +181,24 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [wsConnected, setWsConnected]     = useState(false);
   const [wsReconnecting, setWsReconnecting] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [sortKey, setSortKey]             = useState<SortKey>('volume');
+  const [sortKey, setSortKey]             = useState<SortKey>('trendScore');
   const [sortDir, setSortDir]             = useState<'asc' | 'desc'>('desc');
   const [filter, setFilter]               = useState<FilterKey>('all');
   const [searchQuery, setSearchQuery]     = useState('');
-  const [rsiTimeframe, setRsiTimeframe]   = useState<'15m' | '1h' | '4h' | '1d'>('1h');
+  const [visibleRsiCols, setVisibleRsiCols] = useState<RsiTf[]>(['15m']);
 
+  const toggleRsiCol = useCallback((tf: RsiTf) => {
+    setVisibleRsiCols(prev => {
+      if (prev.includes(tf)) {
+        // always keep at least one column
+        if (prev.length === 1) return prev;
+        return prev.filter(t => t !== tf);
+      }
+      // insert in canonical order
+      const next = ALL_RSI_TFS.filter(t => prev.includes(t) || t === tf);
+      return next;
+    });
+  }, []);
   const wsRef            = useRef<BinanceWebSocket | null>(null);
   const flashTimersRef   = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -251,8 +270,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       const symbols = initialCoins.map(c => c.symbol);
       const total   = symbols.length;
 
-      const klineMap = await batchFetchKlines(symbols, 5, (done) => {
-        setLoadingProgress(5 + Math.round((done / total) * 90));
+      const klineMap = await batchFetchKlines(symbols, 3, (done, batchTotal) => {
+        setLoadingProgress(5 + Math.round((done / batchTotal) * 90));
       });
 
       setCoins(prev => prev.map(coin => {
@@ -262,6 +281,24 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       }));
 
       setLoadingProgress(100);
+
+      // Background retry for any coins that still lack indicator data
+      const stillMissing = symbols.filter(sym => {
+        const klines = klineMap.get(sym);
+        return !klines || !hasMinimumKlineData(klines);
+      });
+      if (stillMissing.length > 0) {
+        setTimeout(async () => {
+          try {
+            const retryMap = await batchFetchKlines(stillMissing, 2);
+            setCoins(prev => prev.map(coin => {
+              const klines = retryMap.get(coin.symbol);
+              if (!klines || !hasMinimumKlineData(klines)) return coin;
+              return { ...coin, ...computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h) };
+            }));
+          } catch { /* silent */ }
+        }, 5000);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to load market data');
       setLoading(false);
@@ -299,14 +336,14 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     switch (filter) {
       case 'oversold':
         result = result.filter(c => {
-          const r = rsiTimeframe === '15m' ? c.rsi15m : rsiTimeframe === '1h' ? c.rsi1h : rsiTimeframe === '4h' ? c.rsi4h : c.rsi1d;
-          return r !== null && r < 30;
+          const v = c.rsi15m ?? c.rsi1h;
+          return v !== null && v < 30;
         });
         break;
       case 'overbought':
         result = result.filter(c => {
-          const r = rsiTimeframe === '15m' ? c.rsi15m : rsiTimeframe === '1h' ? c.rsi1h : rsiTimeframe === '4h' ? c.rsi4h : c.rsi1d;
-          return r !== null && r > 70;
+          const v = c.rsi15m ?? c.rsi1h;
+          return v !== null && v > 70;
         });
         break;
       case 'highVolume':
@@ -351,14 +388,14 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     });
 
     return result;
-  }, [coins, searchQuery, filter, sortKey, sortDir, rsiTimeframe]);
+  }, [coins, searchQuery, filter, sortKey, sortDir]);
 
   return (
     <MarketContext.Provider value={{
       coins, filteredCoins, loading, error, wsConnected, wsReconnecting,
-      loadingProgress, sortKey, sortDir, filter, searchQuery, rsiTimeframe,
-      setSortKey, setSortDir, setFilter, setSearchQuery, setRsiTimeframe,
-      handleSort, refresh: loadData,
+      loadingProgress, sortKey, sortDir, filter, searchQuery, visibleRsiCols,
+      setSortKey, setSortDir, setFilter, setSearchQuery,
+      handleSort, toggleRsiCol, refresh: loadData,
     }}>
       {children}
     </MarketContext.Provider>
