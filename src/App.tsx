@@ -1,22 +1,54 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Route, Switch } from 'wouter';
+import { AuthProvider } from './context/AuthContext';
 import { MarketProvider } from './context/MarketContext';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { HomePage } from './pages/HomePage';
 import { CoinDetailPage } from './pages/CoinDetailPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
 import { NotFoundPage } from './pages/not-found';
 
 const queryClient = new QueryClient();
 
+function AuthenticatedApp() {
+  return (
+    <MarketProvider>
+      <Switch>
+        <Route path="/dashboard">
+          <ProtectedRoute>
+            <DashboardPage />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/">
+          <ProtectedRoute>
+            <HomePage />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/coin/:symbol">
+          <ProtectedRoute>
+            <CoinDetailPage />
+          </ProtectedRoute>
+        </Route>
+        <Route component={NotFoundPage} />
+      </Switch>
+    </MarketProvider>
+  );
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <MarketProvider>
+      <AuthProvider>
         <Switch>
-          <Route path="/" component={HomePage} />
-          <Route path="/coin/:symbol" component={CoinDetailPage} />
-          <Route component={NotFoundPage} />
+          <Route path="/login" component={LoginPage} />
+          <Route path="/register" component={RegisterPage} />
+          <Route>
+            <AuthenticatedApp />
+          </Route>
         </Switch>
-      </MarketProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
