@@ -1,10 +1,12 @@
 import React from 'react';
+import type { CoinData } from '../../context/MarketContext';
 import type { AIAnalysisResult } from '../../services/aiAnalysis';
 import { classifySignal, signalLabel } from '../../utils/formatters';
 import { getTrendScoreColor } from '../../utils/colors';
 
 interface AIAnalysisPanelProps {
   analysis: AIAnalysisResult | null;
+  coin?: CoinData | null;
   loading?: boolean;
 }
 
@@ -22,7 +24,7 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
   );
 }
 
-export function AIAnalysisPanel({ analysis, loading }: AIAnalysisPanelProps) {
+export function AIAnalysisPanel({ analysis, coin, loading }: AIAnalysisPanelProps) {
   if (loading || !analysis) {
     return (
       <div className="p-4 space-y-3">
@@ -54,6 +56,45 @@ export function AIAnalysisPanel({ analysis, loading }: AIAnalysisPanelProps) {
           </span>
         </div>
       </div>
+
+      {coin && coin.indicatorsLoaded && (
+        <div className="p-4 border-b" style={{ borderColor: 'var(--chart-border)' }}>
+          <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--chart-text-dim)' }}>
+            Flip Risk & R:R
+          </h3>
+          <div className="text-xs mb-2 flex items-center gap-2">
+            <span style={{ color: 'var(--chart-text)' }}>MTF uyğunluq:</span>
+            <span className="font-semibold" style={{
+              color: coin.mtfAlignment === 'CONFLICT' ? '#ef5350'
+                : coin.mtfAlignment === 'ALIGNED' ? '#26a69a' : '#f0b90b',
+            }}>
+              {coin.mtfAlignment}
+            </span>
+            <span style={{ color: 'var(--chart-text-dim)' }}>
+              ({coin.mtf15m}/{coin.mtf30m}/{coin.mtf1h}/{coin.mtf4h})
+            </span>
+          </div>
+          {coin.reversalRisk !== 'NONE' && (
+            <div className="rounded px-2 py-2 mb-2 text-xs" style={{
+              background: coin.reversalRisk === 'HIGH' ? 'rgba(239,83,80,.1)' : 'rgba(240,185,11,.08)',
+              border: `1px solid ${coin.reversalRisk === 'HIGH' ? 'rgba(239,83,80,.25)' : 'rgba(240,185,11,.2)'}`,
+              color: coin.reversalRisk === 'HIGH' ? '#ef5350' : '#f0b90b',
+            }}>
+              ⚠ Flip risk: {coin.reversalRisk}
+            </div>
+          )}
+          <ul className="space-y-1 mb-3">
+            {coin.reversalReasons.map((r, i) => (
+              <li key={i} className="text-xs" style={{ color: 'var(--chart-text)' }}>• {r}</li>
+            ))}
+          </ul>
+          {coin.riskReward !== null && (
+            <p className="text-[11px] leading-relaxed whitespace-pre-line" style={{ color: 'var(--chart-text-dim)' }}>
+              {coin.riskRewardNote}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="p-4 border-b" style={{ borderColor: 'var(--chart-border)' }}>
         <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--chart-text-dim)' }}>Signal Reasons</h3>

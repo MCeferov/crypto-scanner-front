@@ -31,7 +31,7 @@ export interface TfAnalysis {
   reasons: string[];
 }
 
-function analyzeTimeframe(klines: Kline[], tf: MtfTf): TfAnalysis {
+export function analyzeTimeframe(klines: Kline[], tf: MtfTf): TfAnalysis {
   const empty: TfAnalysis = { tf, signal: 'NEUTRAL', score: 0, reasons: [] };
   if (klines.length < 15) return empty;
 
@@ -95,12 +95,25 @@ export interface MtfAnalysisResult {
   chartSignalReasons: string[];
 }
 
+export function getPrimaryAnalysisTf(activeTfs: MtfTf[]): MtfTf {
+  const order: MtfTf[] = ['4h', '1h', '30m', '15m'];
+  for (const tf of order) {
+    if (activeTfs.includes(tf)) return tf;
+  }
+  return '1h';
+}
+
 export function computeMultiTimeframeAnalysis(
   klineMap: Record<string, Kline[]>,
+  activeTfs: MtfTf[] = [...MTF_TIMEFRAMES],
 ): MtfAnalysisResult {
-  const analyses = MTF_TIMEFRAMES.map(tf =>
-    analyzeTimeframe(klineMap[tf] || [], tf),
-  );
+  const tfs = MTF_TIMEFRAMES.filter(tf => activeTfs.includes(tf));
+  const analyses = MTF_TIMEFRAMES.map(tf => {
+    if (!activeTfs.includes(tf)) {
+      return { tf, signal: 'NEUTRAL' as TfDir, score: 0, reasons: [] };
+    }
+    return analyzeTimeframe(klineMap[tf] || [], tf);
+  });
 
   let weightedBull = 0;
   let weightedBear = 0;
@@ -108,6 +121,7 @@ export function computeMultiTimeframeAnalysis(
   const chartSignalReasons: string[] = [];
 
   for (const a of analyses) {
+    if (!activeTfs.includes(a.tf)) continue;
     const w = TF_WEIGHTS[a.tf];
     weightedScore += a.score * w;
     if (a.signal === 'BUY') weightedBull += w;
@@ -117,14 +131,18 @@ export function computeMultiTimeframeAnalysis(
     chartSignalReasons.push(`${label}: ${a.signal}${detail}`);
   }
 
-  const buyCount = analyses.filter(a => a.signal === 'BUY').length;
-  const sellCount = analyses.filter(a => a.signal === 'SELL').length;
+  const activeAnalyses = analyses.filter(a => activeTfs.includes(a.tf));
+  const buyCount = activeAnalyses.filter(a => a.signal === 'BUY').length;
+  const sellCount = activeAnalyses.filter(a => a.signal === 'SELL').length;
+  const activeCount = activeAnalyses.length;
 
   let chartSignal: ChartSignal = 'NEUTRAL';
 
-  if (weightedScore >= 4 || (buyCount >= 3 && weightedBull > weightedBear)) {
+  if (activeCount === 0) {
+    chartSignalReasons.push('Heç bir TF seçilməyib');
+  } else if (weightedScore >= 4 || (buyCount >= Math.ceil(activeCount * 0.75) && weightedBull > weightedBear)) {
     chartSignal = 'BUY';
-  } else if (weightedScore <= -4 || (sellCount >= 3 && weightedBear > weightedBull)) {
+  } else if (weightedScore <= -4 || (sellCount >= Math.ceil(activeCount * 0.75) && weightedBear > weightedBull)) {
     chartSignal = 'SELL';
   } else if (weightedBull >= weightedBear + 1.5 && buyCount >= 2) {
     chartSignal = 'BUY';
@@ -137,7 +155,7 @@ export function computeMultiTimeframeAnalysis(
   }
 
   chartSignalReasons.push(
-    `Yekun: ${chartSignal} (${buyCount} BUY / ${sellCount} SELL / ${4 - buyCount - sellCount} NEUTRAL)`,
+    `Yekun (${activeTfs.join(', ')}): ${chartSignal} (${buyCount} BUY / ${sellCount} SELL)`,
   );
 
   return {

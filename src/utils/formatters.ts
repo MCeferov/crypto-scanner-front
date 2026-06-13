@@ -119,7 +119,17 @@ export function classifyHaTrend(trend: number): string {
 
 export function setupDisplayLabel(label: string, conviction: number): string {
   if (label === '—' || conviction === 0) return '—';
-  return conviction > 0 ? `${label}` : label;
+  return label;
+}
+
+export function unifiedSetupLabel(signal: string): string {
+  switch (signal) {
+    case 'STRONG_BUY': return 'S BUY';
+    case 'BUY': return 'BUY';
+    case 'SELL': return 'SELL';
+    case 'STRONG_SELL': return 'S SELL';
+    default: return '—';
+  }
 }
 
 export function zonePositionLabel(position: string | null): string {
@@ -149,4 +159,13 @@ export function chartSignalLabel(signal: string): string {
   if (signal === 'BUY') return 'BUY';
   if (signal === 'SELL') return 'SELL';
   return '—';
+}
+
+export function classifyResearchSignal(signal: string): string {
+  switch (signal) {
+    case 'BUY': return 'signal-buy';
+    case 'SELL': return 'signal-sell';
+    case 'HOLD': return 'signal-neutral';
+    default: return 'signal-neutral';
+  }
 }

@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  useMarket, type SortKey, type RsiTf, type ExtraCol,
+  useMarket, type SortKey, type RsiTf, type ExtraCol, type AnalysisTf,
   ALL_RSI_TFS, RSI_TF_SORT, ALL_EXTRA_COLS, EXTRA_COL_LABELS,
+  ALL_ANALYSIS_TFS, ANALYSIS_TF_LABELS,
 } from '../../context/MarketContext';
 import { HeatmapRow } from './HeatmapRow';
 
@@ -36,13 +37,14 @@ const CORE_RIGHT: ColDef[] = [
   { id: 'trend',    sk: 'trendScore', label: 'Trend', sub: 'Score', align: 'center', minWidth: 80 },
   { id: 'mtf',      sk: null,         label: 'TF',    sub: '15·30·1H·4H', align: 'center', minWidth: 108 },
   { id: 'chartSig', sk: 'chartSignal', label: 'Chart', sub: 'Signal', align: 'center', minWidth: 64 },
+  { id: 'research', sk: 'research', label: 'Bazar', sub: 'Araşdırma', align: 'center', minWidth: 72 },
   { id: 'ha',       sk: 'haSignal',   label: 'HA',    sub: '15m',   align: 'center', minWidth: 44 },
   { id: 'zone',     sk: null,         label: 'Zone',  sub: 'S/D',   align: 'center', minWidth: 44 },
   { id: 'break',    sk: 'zoneBreakout', label: 'Break', sub: 'Dir', align: 'center', minWidth: 68 },
   { id: 'sl',       sk: 'stopLoss',   label: 'SL',    align: 'right',  minWidth: 72 },
   { id: 'tp',       sk: 'takeProfit', label: 'TP',    align: 'right',  minWidth: 72 },
   { id: 'rr',       sk: 'riskReward', label: 'R:R',   align: 'center', minWidth: 44 },
-  { id: 'setup',    sk: 'setup',      label: 'Setup', sub: 'conv',  align: 'center', minWidth: 88 },
+  { id: 'setup',    sk: 'setup',      label: 'Setup', sub: 'Yekun', align: 'center', minWidth: 88 },
 ];
 
 const RSI_TF_LABELS: Record<RsiTf, string> = { '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' };
@@ -57,6 +59,7 @@ export function HeatmapTable() {
   const {
     filteredCoins, loading, sortKey, sortDir, handleSort,
     visibleRsiCols, toggleRsiCol, visibleExtraCols, toggleExtraCol,
+    visibleAnalysisTfs, toggleAnalysisTf,
   } = useMarket();
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -162,6 +165,27 @@ export function HeatmapTable() {
           );
         })}
       </div>
+      <div className="w-px h-4" style={{ background: 'var(--border)' }} />
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>Analiz TF:</span>
+        {ALL_ANALYSIS_TFS.map(tf => {
+          const on = visibleAnalysisTfs.includes(tf);
+          return (
+            <button
+              key={tf}
+              onClick={() => toggleAnalysisTf(tf)}
+              className="text-[10px] px-2 py-0.5 rounded font-semibold transition-all"
+              style={{
+                background: on ? 'rgba(38,166,154,.15)' : 'var(--elevated)',
+                color: on ? '#26a69a' : 'var(--dim)',
+                border: `1px solid ${on ? 'rgba(38,166,154,.35)' : 'var(--border)'}`,
+              }}
+            >
+              {ANALYSIS_TF_LABELS[tf]}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 
@@ -209,6 +233,7 @@ export function HeatmapTable() {
                       rank={vRow.index + 1}
                       visibleRsiCols={visibleRsiCols}
                       visibleExtraCols={visibleExtraCols}
+                      visibleAnalysisTfs={visibleAnalysisTfs}
                       visibleColIds={allCols.map(c => c.id)}
                     />
                   );

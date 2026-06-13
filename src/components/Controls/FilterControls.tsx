@@ -1,26 +1,9 @@
-import React from 'react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Plus, X } from 'lucide-react';
 import { useMarket, type FilterKey } from '../../context/MarketContext';
-
-const FILTERS: { key: FilterKey; label: string; color?: string }[] = [
-  { key: 'all',        label: 'All' },
-  { key: 'oversold',   label: 'RSI < 30',    color: '#26a69a' },
-  { key: 'overbought', label: 'RSI > 70',    color: '#ef5350' },
-  { key: 'highVolume', label: 'Top Volume',  color: '#f0b90b' },
-  { key: 'topGainers', label: '↑ Gainers',   color: '#26a69a' },
-  { key: 'topLosers',  label: '↓ Losers',    color: '#ef5350' },
-  { key: 'strongBuy',  label: 'Buy Signals', color: '#26a69a' },
-  { key: 'strongSell', label: 'Sell Signals',color: '#ef5350' },
-  { key: 'zoneBuy',    label: 'S/D Buy',     color: '#26a69a' },
-  { key: 'zoneSell',   label: 'S/D Sell',    color: '#ef5350' },
-  { key: 'zoneBreakLong',  label: '↑ Break',  color: '#26a69a' },
-  { key: 'zoneBreakShort', label: '↓ Break',  color: '#ef5350' },
-  { key: 'haBuy',      label: 'HA Buy',      color: '#26a69a' },
-  { key: 'haSell',     label: 'HA Sell',     color: '#ef5350' },
-  { key: 'setupBuy',   label: 'Setup Buy',   color: '#26a69a' },
-  { key: 'setupSell',  label: 'Setup Sell',  color: '#ef5350' },
-  { key: 'chartBuy',   label: 'Chart Buy',   color: '#26a69a' },
-  { key: 'chartSell',  label: 'Chart Sell',  color: '#ef5350' },
-];
+import {
+  FILTER_DEFS, DEFAULT_FILTER_KEYS, OPTIONAL_FILTER_KEYS, getFilterDef,
+} from './filterConfig';
 
 function hexToRgb(hex: string) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -29,33 +12,141 @@ function hexToRgb(hex: string) {
   return `${r},${g},${b}`;
 }
 
+function FilterButton({
+  f, active, onClick, onRemove,
+}: {
+  f: { key: FilterKey; label: string; color?: string };
+  active: boolean;
+  onClick: () => void;
+  onRemove?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="text-xs px-3 py-1.5 rounded-md transition-all flex items-center gap-1"
+      style={{
+        background: active
+          ? f.color ? `rgba(${hexToRgb(f.color)},0.12)` : 'var(--elevated)'
+          : 'var(--surface)',
+        color: active ? (f.color || 'var(--text)') : 'var(--muted)',
+        border: `1px solid ${active
+          ? f.color ? `rgba(${hexToRgb(f.color)},0.30)` : 'var(--border-lite)'
+          : 'var(--border)'}`,
+        fontWeight: active ? 600 : 400,
+      }}
+    >
+      {f.label}
+      {onRemove && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={e => { e.stopPropagation(); onRemove(); }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); onRemove(); } }}
+          className="ml-0.5 opacity-50 hover:opacity-100"
+          style={{ lineHeight: 1 }}
+        >
+          <X size={10} />
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function FilterControls() {
-  const { filter, setFilter } = useMarket();
+  const {
+    filter, setFilter,
+    visibleOptionalFilters, addOptionalFilter, removeOptionalFilter,
+  } = useMarket();
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
+  const defaultFilters = FILTER_DEFS.filter(f => DEFAULT_FILTER_KEYS.includes(f.key));
+  const activeOptional = FILTER_DEFS.filter(f => visibleOptionalFilters.includes(f.key));
+  const availableOptional = OPTIONAL_FILTER_KEYS.filter(
+    k => !visibleOptionalFilters.includes(k),
+  );
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      {FILTERS.map(f => {
-        const active = filter === f.key;
-        return (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className="text-xs px-3 py-1.5 rounded-md transition-all"
+      {defaultFilters.map(f => (
+        <FilterButton
+          key={f.key}
+          f={f}
+          active={filter === f.key}
+          onClick={() => setFilter(f.key)}
+        />
+      ))}
+
+      {activeOptional.map(f => (
+        <FilterButton
+          key={f.key}
+          f={f}
+          active={filter === f.key}
+          onClick={() => setFilter(f.key)}
+          onRemove={() => removeOptionalFilter(f.key)}
+        />
+      ))}
+
+      <div className="relative" ref={menuRef}>
+        <button
+          onClick={() => setMenuOpen(o => !o)}
+          className="text-xs px-2 py-1.5 rounded-md transition-all flex items-center gap-1"
+          style={{
+            background: menuOpen ? 'var(--elevated)' : 'var(--surface)',
+            color: 'var(--muted)',
+            border: `1px solid ${menuOpen ? 'var(--border-lite)' : 'var(--border)'}`,
+          }}
+          title="Add filter"
+        >
+          <Plus size={14} />
+        </button>
+
+        {menuOpen && availableOptional.length > 0 && (
+          <div
+            className="absolute left-0 top-full mt-1 z-50 rounded-lg py-1 min-w-[140px] shadow-lg"
             style={{
-              background: active
-                ? f.color ? `rgba(${hexToRgb(f.color)},0.12)` : 'var(--elevated)'
-                : 'var(--surface)',
-              color: active ? (f.color || 'var(--text)') : 'var(--muted)',
-              border: `1px solid ${active
-                ? f.color ? `rgba(${hexToRgb(f.color)},0.30)` : 'var(--border-lite)'
-                : 'var(--border)'}`,
-              fontWeight: active ? 600 : 400,
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
             }}
           >
-            {f.label}
-          </button>
-        );
-      })}
+            {availableOptional.map(key => {
+              const def = getFilterDef(key);
+              if (!def) return null;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { addOptionalFilter(key); setMenuOpen(false); }}
+                  className="w-full text-left text-xs px-3 py-2 hover:bg-white/[0.04] transition-colors"
+                  style={{ color: def.color || 'var(--text)' }}
+                >
+                  {def.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {menuOpen && availableOptional.length === 0 && (
+          <div
+            className="absolute left-0 top-full mt-1 z-50 rounded-lg px-3 py-2 text-xs"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--dim)' }}
+          >
+            All filters added
+          </div>
+        )}
+      </div>
     </div>
   );
 }

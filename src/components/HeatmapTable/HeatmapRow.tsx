@@ -1,20 +1,21 @@
 import React, { memo } from 'react';
 import { useLocation } from 'wouter';
-import type { CoinData, RsiTf, ExtraCol } from '../../context/MarketContext';
+import type { CoinData, RsiTf, ExtraCol, AnalysisTf } from '../../context/MarketContext';
 import { RSICell } from './RSICell';
+import { CandleAge } from './CandleAge';
 import {
   formatPrice, formatVolume, formatSymbol,
   classifySignal, classifyZoneBreakout, classifyHaTrend,
   zoneBreakoutLabel, zonePositionLabel, haTrendLabel,
-  mtfDirShort, classifyMtfDir, chartSignalLabel,
+  mtfDirShort, classifyMtfDir, chartSignalLabel, classifyResearchSignal,
 } from '../../utils/formatters';
 import { getTrendScoreColor } from '../../utils/colors';
 
-const MTF_COLS: { id: string; key: keyof CoinData; label: string }[] = [
-  { id: 'mtf15', key: 'mtf15m', label: '15m' },
-  { id: 'mtf30', key: 'mtf30m', label: '30m' },
-  { id: 'mtf1h', key: 'mtf1h',  label: '1H' },
-  { id: 'mtf4h', key: 'mtf4h',  label: '4H' },
+const MTF_COLS: { id: string; key: keyof CoinData; ageKey: keyof CoinData; label: string; tf: AnalysisTf }[] = [
+  { id: 'mtf15', key: 'mtf15m', ageKey: 'mtf15mCandles', label: '15m', tf: '15m' },
+  { id: 'mtf30', key: 'mtf30m', ageKey: 'mtf30mCandles', label: '30m', tf: '30m' },
+  { id: 'mtf1h', key: 'mtf1h',  ageKey: 'mtf1hCandles',  label: '1H',  tf: '1h' },
+  { id: 'mtf4h', key: 'mtf4h',  ageKey: 'mtf4hCandles',  label: '4H',  tf: '4h' },
 ];
 
 const RSI_KEY: Record<RsiTf, keyof CoinData> = {
@@ -26,6 +27,7 @@ interface HeatmapRowProps {
   rank: number;
   visibleRsiCols: RsiTf[];
   visibleExtraCols: ExtraCol[];
+  visibleAnalysisTfs: AnalysisTf[];
   visibleColIds: string[];
 }
 
@@ -42,7 +44,7 @@ function has(cols: string[], id: string) {
 }
 
 export const HeatmapRow = memo(function HeatmapRow({
-  coin, rank, visibleRsiCols, visibleExtraCols, visibleColIds,
+  coin, rank, visibleRsiCols, visibleExtraCols, visibleAnalysisTfs, visibleColIds,
 }: HeatmapRowProps) {
   const [, setLocation] = useLocation();
   const even = rank % 2 === 0;
@@ -51,11 +53,14 @@ export const HeatmapRow = memo(function HeatmapRow({
   const loaded = coin.indicatorsLoaded;
 
   const setupTooltip = [
+    coin.setupCandles > 0 ? `Setup: ${coin.setupCandles} şamdır (min. aktiv müddət)` : '',
+    coin.setupCandles <= 2 && coin.setupSignal !== 'NEUTRAL' ? '⚠ Yeni setup — 2 şamdan az' : '',
+    coin.reversalRisk !== 'NONE' ? `⚠ Flip risk: ${coin.reversalRisk} (${coin.mtfAlignment})` : '',
+    ...coin.reversalReasons,
+    '---',
     ...coin.setupReasons,
-    coin.setupConviction > 0 ? `Conviction: ${coin.setupConviction}` : '',
-    `HA: ${coin.haReasons.join(', ')}`,
-    `Zone: ${coin.zoneBreakoutReasons.join(', ')}`,
-  ].filter(Boolean).join(' · ');
+    coin.riskReward !== null ? `---\n${coin.riskRewardNote}` : '',
+  ].filter(Boolean).join('\n');
 
   return (
     <tr
@@ -102,6 +107,7 @@ export const HeatmapRow = memo(function HeatmapRow({
             {coin.macdHistogram !== null ? (
               <span className="font-mono text-[11px]" style={{ color: coin.macdHistogram > 0 ? '#26a69a' : '#ef5350' }}>
                 {coin.macdHistogram > 0 ? '▲' : '▼'} {Math.abs(coin.macdHistogram).toFixed(4)}
+                <CandleAge candles={coin.macdCandles} />
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
@@ -130,7 +136,7 @@ export const HeatmapRow = memo(function HeatmapRow({
             {coin.stochRsiK !== null ? (
               <span className="font-mono text-[11px]" style={{
                 color: coin.stochRsiK > 80 ? '#ef5350' : coin.stochRsiK < 20 ? '#26a69a' : 'var(--muted)',
-              }}>{coin.stochRsiK.toFixed(1)}</span>
+              }}>{coin.stochRsiK.toFixed(1)}<CandleAge candles={coin.stochCandles} /></span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
         )
@@ -145,7 +151,7 @@ export const HeatmapRow = memo(function HeatmapRow({
                   color: coin.superTrend === 1 ? '#26a69a' : '#ef5350',
                   background: coin.superTrend === 1 ? 'rgba(38,166,154,.10)' : 'rgba(239,83,80,.10)',
                   border: `1px solid ${coin.superTrend === 1 ? 'rgba(38,166,154,.25)' : 'rgba(239,83,80,.25)'}`,
-                }}>{coin.superTrend === 1 ? '▲' : '▼'}</span>
+                }}>{coin.superTrend === 1 ? '▲' : '▼'}<CandleAge candles={coin.stCandles} /></span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
         )
@@ -184,16 +190,22 @@ export const HeatmapRow = memo(function HeatmapRow({
       {has(visibleColIds, 'mtf') && (
         !loaded ? <SkeletonCell w={88} /> : (
           <td className="px-1 py-2 text-center" style={{ minWidth: 108 }}>
-            <div className="flex items-center justify-center gap-0.5" title={coin.chartSignalReasons.join('\n')}>
-              {MTF_COLS.map(col => {
+            <div className="flex items-center justify-center gap-0.5" title={[
+              coin.mtfAlignment === 'CONFLICT' ? '⚠ TF ziddiyyəti — flip riski' : '',
+              coin.mtfAlignment === 'MIXED' ? 'TF qarışıq' : '',
+              ...coin.chartSignalReasons,
+            ].filter(Boolean).join('\n')}>
+              {MTF_COLS.filter(col => visibleAnalysisTfs.includes(col.tf)).map(col => {
                 const dir = coin[col.key] as string;
+                const candles = coin[col.ageKey] as number;
                 return (
                   <span
                     key={col.id}
                     className={`inline-block font-bold rounded px-1 py-0.5 text-[9px] font-mono leading-none ${classifyMtfDir(dir)}`}
-                    title={`${col.label}: ${dir}`}
+                    title={`${col.label}: ${dir}${candles ? ` — ${candles} şam` : ''}`}
                   >
                     {col.label.replace('m', '')}{mtfDirShort(dir)}
+                    <CandleAge candles={dir !== 'NEUTRAL' ? candles : 0} />
                   </span>
                 );
               })}
@@ -211,6 +223,23 @@ export const HeatmapRow = memo(function HeatmapRow({
                 title={coin.chartSignalReasons.join('\n')}
               >
                 {chartSignalLabel(coin.chartSignal)}
+                <CandleAge candles={coin.chartCandles} />
+              </span>
+            ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
+          </td>
+        )
+      )}
+
+      {has(visibleColIds, 'research') && (
+        !loaded ? <SkeletonCell w={56} /> : (
+          <td className="px-2 py-2 text-center" style={{ minWidth: 72 }}>
+            {coin.researchSignal !== 'NEUTRAL' ? (
+              <span
+                className={`inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap ${classifyResearchSignal(coin.researchSignal)}`}
+                title={coin.researchReasons.join('\n')}
+              >
+                {coin.researchLabel}
+                <CandleAge candles={coin.chartCandles} />
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
@@ -226,6 +255,7 @@ export const HeatmapRow = memo(function HeatmapRow({
                 title={coin.haReasons.join(' · ')}
               >
                 {haTrendLabel(coin.haTrend, coin.haConsecutive)}
+                <CandleAge candles={coin.haCandles} />
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
@@ -250,6 +280,7 @@ export const HeatmapRow = memo(function HeatmapRow({
                   : coin.zonePosition === 'between' ? 'rgba(240,185,11,.25)' : 'var(--border)'}`,
               }}>
               {zonePositionLabel(coin.zonePosition)}
+              <CandleAge candles={coin.zoneCandles} />
             </span>
           </td>
         )
@@ -262,6 +293,7 @@ export const HeatmapRow = memo(function HeatmapRow({
               <span className={`inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap ${classifyZoneBreakout(coin.zoneBreakoutSignal)}`}
                 title={coin.zoneBreakoutReasons.join(' · ')}>
                 {zoneBreakoutLabel(coin.zoneBreakoutSignal)}
+                <CandleAge candles={coin.zoneCandles} />
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
@@ -294,7 +326,9 @@ export const HeatmapRow = memo(function HeatmapRow({
             <span className="font-mono text-[11px]" style={{
               color: coin.riskReward && coin.riskReward >= 2 ? '#26a69a'
                 : coin.riskReward && coin.riskReward >= 1.5 ? '#f0b90b' : 'var(--dim)',
-            }}>
+            }}
+              title={coin.riskRewardNote || undefined}
+            >
               {coin.riskReward !== null ? `${coin.riskReward.toFixed(1)}` : '—'}
             </span>
           </td>
@@ -309,7 +343,9 @@ export const HeatmapRow = memo(function HeatmapRow({
                 className={`inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap ${classifySignal(coin.setupSignal)}`}
                 title={setupTooltip}
               >
+                {coin.reversalRisk === 'HIGH' && <span className="mr-0.5">⚠</span>}
                 {coin.setupLabel}
+                <CandleAge candles={coin.setupCandles} />
                 {coin.setupConviction > 0 && (
                   <span className="opacity-60 ml-1">{coin.setupConviction}</span>
                 )}
@@ -338,6 +374,8 @@ export const HeatmapRow = memo(function HeatmapRow({
   prev.coin.mtf1h === next.coin.mtf1h &&
   prev.coin.mtf4h === next.coin.mtf4h &&
   prev.coin.chartSignal === next.coin.chartSignal &&
+  prev.coin.researchSignal === next.coin.researchSignal &&
+  prev.coin.researchLabel === next.coin.researchLabel &&
   prev.coin.haTrend === next.coin.haTrend &&
   prev.coin.haConsecutive === next.coin.haConsecutive &&
   prev.coin.setupSignal === next.coin.setupSignal &&
@@ -352,5 +390,6 @@ export const HeatmapRow = memo(function HeatmapRow({
   prev.rank === next.rank &&
   prev.visibleRsiCols.join() === next.visibleRsiCols.join() &&
   prev.visibleExtraCols.join() === next.visibleExtraCols.join() &&
+  prev.visibleAnalysisTfs.join() === next.visibleAnalysisTfs.join() &&
   prev.visibleColIds.join() === next.visibleColIds.join()
 );

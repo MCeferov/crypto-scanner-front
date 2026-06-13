@@ -57,12 +57,12 @@ export function CoinDetailPage() {
           className="w-[300px] shrink-0 border-l overflow-hidden hidden lg:block"
           style={{ borderColor: 'var(--chart-border)', background: 'var(--chart-bg)' }}
         >
-          <AIAnalysisPanel analysis={analysis} loading={!coin?.indicatorsLoaded} />
+          <AIAnalysisPanel analysis={analysis} coin={coin} loading={!coin?.indicatorsLoaded} />
         </div>
       </div>
 
       <div className="lg:hidden border-t max-h-[240px] overflow-y-auto" style={{ borderColor: 'var(--chart-border)' }}>
-        <AIAnalysisPanel analysis={analysis} loading={!coin?.indicatorsLoaded} />
+        <AIAnalysisPanel analysis={analysis} coin={coin} loading={!coin?.indicatorsLoaded} />
       </div>
     </div>
   );
