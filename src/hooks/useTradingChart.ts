@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useTheme } from 'next-themes';
 import {
   createChart,
   CandlestickSeries,
@@ -13,55 +14,64 @@ import { getKlines } from '../services/binanceApi';
 import { ChartKlineWebSocket } from '../services/chartWebSocket';
 import {
   CHART_TIMEFRAMES,
-  CHART_THEME,
   DEFAULT_INDICATOR_SETTINGS,
+  getChartTheme,
+  type ChartThemeColors,
   type ChartTimeframe,
   type IndicatorSettings,
 } from '../types/chart';
 import { computeAllChartSeries, toChartTime } from '../utils/chartSeries';
 
-const BASE_CHART_OPTIONS = {
-  layout: {
-    background: { color: CHART_THEME.background },
-    textColor: CHART_THEME.text,
-    fontFamily: "'Inter', sans-serif",
-    fontSize: 11,
-    attributionLogo: false,
-  },
-  grid: {
-    vertLines: { color: CHART_THEME.grid },
-    horzLines: { color: CHART_THEME.grid },
-  },
-  crosshair: {
-    mode: CrosshairMode.Normal,
-    vertLine: { color: CHART_THEME.crosshair, width: 1 as const, style: 2 },
-    horzLine: { color: CHART_THEME.crosshair, width: 1 as const, style: 2 },
-  },
-  rightPriceScale: { borderColor: CHART_THEME.border },
-  timeScale: {
-    borderColor: CHART_THEME.border,
-    timeVisible: true,
-    secondsVisible: false,
-    rightOffset: 8,
-    barSpacing: 8,
-    minBarSpacing: 2,
-  },
-  handleScroll: {
-    mouseWheel: true,
-    pressedMouseMove: true,
-    horzTouchDrag: true,
-    vertTouchDrag: false,
-  },
-  handleScale: {
-    axisPressedMouseMove: true,
-    mouseWheel: true,
-    pinch: true,
-  },
-};
+function buildChartOptions(theme: ChartThemeColors) {
+  return {
+    layout: {
+      background: { color: theme.background },
+      textColor: theme.text,
+      fontFamily: "'Inter', sans-serif",
+      fontSize: 11,
+      attributionLogo: false,
+    },
+    grid: {
+      vertLines: { color: theme.grid },
+      horzLines: { color: theme.grid },
+    },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+      vertLine: { color: theme.crosshair, width: 1 as const, style: 2 },
+      horzLine: { color: theme.crosshair, width: 1 as const, style: 2 },
+    },
+    rightPriceScale: { borderColor: theme.border },
+    timeScale: {
+      borderColor: theme.border,
+      timeVisible: true,
+      secondsVisible: false,
+      rightOffset: 8,
+      barSpacing: 8,
+      minBarSpacing: 2,
+    },
+    handleScroll: {
+      mouseWheel: true,
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: false,
+    },
+    handleScale: {
+      axisPressedMouseMove: true,
+      mouseWheel: true,
+      pinch: true,
+    },
+  };
+}
 
 const PANE_HEIGHTS = { main: 380, rsi: 100, macd: 100, stoch: 100 };
 
 export function useTradingChart(symbol: string) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+  const chartTheme = getChartTheme(isDark);
+  const chartThemeRef = useRef(chartTheme);
+  chartThemeRef.current = chartTheme;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -121,16 +131,17 @@ export function useTradingChart(symbol: string) {
     const chart = chartRef.current;
     if (!chart || klines.length === 0) return;
 
+    const theme = chartThemeRef.current;
     const series = computeAllChartSeries(klines, s);
 
     // --- Pane 0: Main chart ---
     removeSeriesSafe(chart, candleSeriesRef);
     candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
-      upColor: CHART_THEME.upColor,
-      downColor: CHART_THEME.downColor,
+      upColor: theme.upColor,
+      downColor: theme.downColor,
       borderVisible: false,
-      wickUpColor: CHART_THEME.upColor,
-      wickDownColor: CHART_THEME.downColor,
+      wickUpColor: theme.upColor,
+      wickDownColor: theme.downColor,
     }, 0);
     candleSeriesRef.current.setData(series.candles);
 
@@ -146,9 +157,9 @@ export function useTradingChart(symbol: string) {
 
     [bbUpperRef, bbMiddleRef, bbLowerRef].forEach(ref => removeSeriesSafe(chart, ref));
     if (s.bollingerBands.enabled) {
-      bbUpperRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.bbUpper, lineWidth: 1, title: 'BB Upper' }, 0);
-      bbMiddleRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.bbMiddle, lineWidth: 1, title: 'BB Mid' }, 0);
-      bbLowerRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.bbLower, lineWidth: 1, title: 'BB Lower' }, 0);
+      bbUpperRef.current = chart.addSeries(LineSeries, { color: theme.bbUpper, lineWidth: 1, title: 'BB Upper' }, 0);
+      bbMiddleRef.current = chart.addSeries(LineSeries, { color: theme.bbMiddle, lineWidth: 1, title: 'BB Mid' }, 0);
+      bbLowerRef.current = chart.addSeries(LineSeries, { color: theme.bbLower, lineWidth: 1, title: 'BB Lower' }, 0);
       bbUpperRef.current.setData(series.bb.upper);
       bbMiddleRef.current.setData(series.bb.middle);
       bbLowerRef.current.setData(series.bb.lower);
@@ -156,7 +167,7 @@ export function useTradingChart(symbol: string) {
 
     removeSeriesSafe(chart, stSeriesRef);
     if (s.superTrend.enabled && series.superTrend.length) {
-      stSeriesRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.stBull, lineWidth: 2, title: 'SuperTrend' }, 0);
+      stSeriesRef.current = chart.addSeries(LineSeries, { color: theme.stBull, lineWidth: 2, title: 'SuperTrend' }, 0);
       stSeriesRef.current.setData(series.superTrend.map(p => ({ time: p.time, value: p.value })));
     }
 
@@ -170,7 +181,7 @@ export function useTradingChart(symbol: string) {
 
     if (s.rsi.enabled && s.rsi.panel && series.rsi.length) {
       const idx = addIndicatorPane(chart, 'rsi');
-      rsiSeriesRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.rsi, lineWidth: 2, title: 'RSI' }, idx);
+      rsiSeriesRef.current = chart.addSeries(LineSeries, { color: theme.rsi, lineWidth: 2, title: 'RSI' }, idx);
       rsiSeriesRef.current.setData(series.rsi);
     }
 
@@ -178,17 +189,17 @@ export function useTradingChart(symbol: string) {
       const idx = addIndicatorPane(chart, 'macd');
       macdHistRef.current = chart.addSeries(HistogramSeries, { title: 'MACD Hist' }, idx);
       macdHistRef.current.setData(series.macd.histogram);
-      macdLineRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.macd, lineWidth: 1, title: 'MACD' }, idx);
+      macdLineRef.current = chart.addSeries(LineSeries, { color: theme.macd, lineWidth: 1, title: 'MACD' }, idx);
       macdLineRef.current.setData(series.macd.macd);
-      macdSignalRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.macdSignal, lineWidth: 1, title: 'Signal' }, idx);
+      macdSignalRef.current = chart.addSeries(LineSeries, { color: theme.macdSignal, lineWidth: 1, title: 'Signal' }, idx);
       macdSignalRef.current.setData(series.macd.signal);
     }
 
     if (s.stochRsi.enabled && s.stochRsi.panel && series.stochRsi.k.length) {
       const idx = addIndicatorPane(chart, 'stoch');
-      stochKRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.stochK, lineWidth: 2, title: 'Stoch K' }, idx);
+      stochKRef.current = chart.addSeries(LineSeries, { color: theme.stochK, lineWidth: 2, title: 'Stoch K' }, idx);
       stochKRef.current.setData(series.stochRsi.k);
-      stochDRef.current = chart.addSeries(LineSeries, { color: CHART_THEME.stochD, lineWidth: 1, title: 'Stoch D' }, idx);
+      stochDRef.current = chart.addSeries(LineSeries, { color: theme.stochD, lineWidth: 1, title: 'Stoch D' }, idx);
       stochDRef.current.setData(series.stochRsi.d);
     }
 
@@ -218,10 +229,11 @@ export function useTradingChart(symbol: string) {
     candle.update({ time, open: kline.open, high: kline.high, low: kline.low, close: kline.close });
 
     if (volumeSeriesRef.current) {
+      const theme = chartThemeRef.current;
       volumeSeriesRef.current.update({
         time,
         value: kline.volume,
-        color: kline.close >= kline.open ? CHART_THEME.volumeUp : CHART_THEME.volumeDown,
+        color: kline.close >= kline.open ? theme.volumeUp : theme.volumeDown,
       });
     }
 
@@ -242,8 +254,9 @@ export function useTradingChart(symbol: string) {
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const initialTheme = getChartTheme(document.documentElement.classList.contains('dark'));
     const chart = createChart(containerRef.current, {
-      ...BASE_CHART_OPTIONS,
+      ...buildChartOptions(initialTheme),
       width: containerRef.current.clientWidth,
       height: 680,
       autoSize: true,
@@ -265,6 +278,16 @@ export function useTradingChart(symbol: string) {
       paneMapRef.current = { rsi: -1, macd: -1, stoch: -1 };
     };
   }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    chart.applyOptions(buildChartOptions(chartTheme));
+    if (klinesRef.current.length > 0) {
+      applySeries(klinesRef.current, settingsRef.current);
+    }
+  }, [isDark, chartTheme, applySeries]);
 
   useEffect(() => {
     if (!symbol) return;

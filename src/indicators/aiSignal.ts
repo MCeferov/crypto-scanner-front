@@ -6,11 +6,11 @@ export interface SignalInput {
   rsi4h: number | null;
   rsi1d: number | null;
   macdHistogram: number | null;
-  price: number;
-  ema50: number | null;
-  ema200: number | null;
   stochRsiK: number | null;
   priceChange24h: number;
+  haTrend: 1 | -1 | 0;
+  haConsecutive: number;
+  haSignal: import('./heikinAshi').HaSignal;
 }
 
 export interface SignalResult {
@@ -27,64 +27,66 @@ export function computeSignal(input: SignalInput): SignalResult {
 
   const macdBullish = input.macdHistogram !== null && input.macdHistogram > 0;
   const macdBearish = input.macdHistogram !== null && input.macdHistogram < 0;
-  const aboveEMA50 = input.ema50 !== null && input.price > input.ema50;
-  const belowEMA50 = input.ema50 !== null && input.price < input.ema50;
-  const aboveEMA200 = input.ema200 !== null && input.price > input.ema200;
-  const belowEMA200 = input.ema200 !== null && input.price < input.ema200;
+  const haBullish = input.haTrend === 1;
+  const haBearish = input.haTrend === -1;
   const stochOversold = input.stochRsiK !== null && input.stochRsiK < 20;
   const stochOverbought = input.stochRsiK !== null && input.stochRsiK > 80;
 
-  // RSI signals
   if (input.rsi1h !== null) {
-    if (input.rsi1h < 30) { bullishCount += 2; reasons.push('RSI 1H oversold (<30)'); }
-    else if (input.rsi1h < 40) { bullishCount += 1; reasons.push('RSI 1H low (<40)'); }
-    else if (input.rsi1h > 70) { bearishCount += 2; reasons.push('RSI 1H overbought (>70)'); }
-    else if (input.rsi1h > 60) { bearishCount += 1; reasons.push('RSI 1H high (>60)'); }
+    if (input.rsi1h < 30) { bullishCount += 2; reasons.push('HA-RSI 1H oversold'); }
+    else if (input.rsi1h < 40) { bullishCount += 1; reasons.push('HA-RSI 1H low'); }
+    else if (input.rsi1h > 70) { bearishCount += 2; reasons.push('HA-RSI 1H overbought'); }
+    else if (input.rsi1h > 60) { bearishCount += 1; reasons.push('HA-RSI 1H high'); }
   }
   if (input.rsi4h !== null) {
-    if (input.rsi4h < 35) { bullishCount += 1; reasons.push('RSI 4H oversold'); }
-    else if (input.rsi4h > 65) { bearishCount += 1; reasons.push('RSI 4H overbought'); }
+    if (input.rsi4h < 35) { bullishCount += 1; reasons.push('HA-RSI 4H oversold'); }
+    else if (input.rsi4h > 65) { bearishCount += 1; reasons.push('HA-RSI 4H overbought'); }
   }
   if (input.rsi1d !== null) {
-    if (input.rsi1d < 35) { bullishCount += 1; reasons.push('RSI 1D oversold'); }
-    else if (input.rsi1d > 65) { bearishCount += 1; reasons.push('RSI 1D overbought'); }
+    if (input.rsi1d < 35) { bullishCount += 1; reasons.push('HA-RSI 1D oversold'); }
+    else if (input.rsi1d > 65) { bearishCount += 1; reasons.push('HA-RSI 1D overbought'); }
   }
 
-  // MACD signals
-  if (macdBullish) { bullishCount += 1; reasons.push('MACD bullish crossover'); }
-  if (macdBearish) { bearishCount += 1; reasons.push('MACD bearish crossover'); }
+  if (macdBullish) { bullishCount += 1; reasons.push('HA-MACD bullish'); }
+  if (macdBearish) { bearishCount += 1; reasons.push('HA-MACD bearish'); }
 
-  // EMA signals
-  if (aboveEMA200) { bullishCount += 2; reasons.push('Price above EMA200'); }
-  if (belowEMA200) { bearishCount += 2; reasons.push('Price below EMA200'); }
-  if (aboveEMA50) { bullishCount += 1; reasons.push('Price above EMA50'); }
-  if (belowEMA50) { bearishCount += 1; reasons.push('Price below EMA50'); }
+  if (haBullish && input.haConsecutive >= 2) {
+    bullishCount += 2;
+    reasons.push(`HA trend ▲${input.haConsecutive}`);
+  } else if (haBearish && input.haConsecutive >= 2) {
+    bearishCount += 2;
+    reasons.push(`HA trend ▼${input.haConsecutive}`);
+  }
 
-  // Stochastic RSI signals
-  if (stochOversold) { bullishCount += 1; reasons.push('Stoch RSI oversold'); }
-  if (stochOverbought) { bearishCount += 1; reasons.push('Stoch RSI overbought'); }
+  if (input.haSignal === 'STRONG_BUY' || input.haSignal === 'BUY') {
+    bullishCount += input.haSignal === 'STRONG_BUY' ? 2 : 1;
+    reasons.push(`HA signal ${input.haSignal.replace('_', ' ')}`);
+  }
+  if (input.haSignal === 'STRONG_SELL' || input.haSignal === 'SELL') {
+    bearishCount += input.haSignal === 'STRONG_SELL' ? 2 : 1;
+    reasons.push(`HA signal ${input.haSignal.replace('_', ' ')}`);
+  }
 
-  // STRONG BUY: RSI < 30 + MACD bullish + above EMA200
+  if (stochOversold) { bullishCount += 1; reasons.push('HA-Stoch RSI oversold'); }
+  if (stochOverbought) { bearishCount += 1; reasons.push('HA-Stoch RSI overbought'); }
+
   const isStrongBuy =
-    input.rsi1h !== null && input.rsi1h < 30 &&
-    macdBullish && aboveEMA200;
+    input.haSignal === 'STRONG_BUY' ||
+    (input.rsi1h !== null && input.rsi1h < 30 && macdBullish && haBullish && input.haConsecutive >= 2);
 
-  // STRONG SELL: RSI > 70 + MACD bearish + below EMA200
   const isStrongSell =
-    input.rsi1h !== null && input.rsi1h > 70 &&
-    macdBearish && belowEMA200;
+    input.haSignal === 'STRONG_SELL' ||
+    (input.rsi1h !== null && input.rsi1h > 70 && macdBearish && haBearish && input.haConsecutive >= 2);
 
-  // STRONG BUY alternate: RSI 1H <35 + RSI 4H <40 + MACD bullish
   const isStrongBuy2 =
     input.rsi1h !== null && input.rsi1h < 35 &&
     input.rsi4h !== null && input.rsi4h < 40 &&
-    macdBullish;
+    macdBullish && haBullish;
 
-  // STRONG SELL alternate: RSI 1H >65 + RSI 4H >65 + MACD bearish
   const isStrongSell2 =
     input.rsi1h !== null && input.rsi1h > 65 &&
     input.rsi4h !== null && input.rsi4h > 65 &&
-    macdBearish;
+    macdBearish && haBearish;
 
   let signal: Signal;
   if (isStrongBuy || isStrongBuy2) {

@@ -66,6 +66,87 @@ export function signalLabel(signal: string): string {
     case 'BUY': return 'BUY';
     case 'SELL': return 'SELL';
     case 'STRONG_SELL': return 'STRONG SELL';
+    case 'ZONE_STRONG_BUY': return 'S/B BUY';
+    case 'ZONE_BUY': return 'ZONE BUY';
+    case 'ZONE_SELL': return 'ZONE SELL';
+    case 'ZONE_STRONG_SELL': return 'S/D SELL';
+    case 'ZONE_NEUTRAL': return '—';
     default: return 'NEUTRAL';
   }
+}
+
+export function classifyZoneSignal(signal: string): string {
+  switch (signal) {
+    case 'ZONE_STRONG_BUY': return 'signal-strong-buy';
+    case 'ZONE_BUY': return 'signal-buy';
+    case 'ZONE_SELL': return 'signal-sell';
+    case 'ZONE_STRONG_SELL': return 'signal-strong-sell';
+    default: return 'signal-neutral';
+  }
+}
+
+export function classifyZoneBreakout(signal: string): string {
+  switch (signal) {
+    case 'STRONG_LONG': return 'signal-strong-buy';
+    case 'LONG': return 'signal-buy';
+    case 'SHORT': return 'signal-sell';
+    case 'STRONG_SHORT': return 'signal-strong-sell';
+    default: return 'signal-neutral';
+  }
+}
+
+export function zoneBreakoutLabel(signal: string): string {
+  switch (signal) {
+    case 'STRONG_LONG': return '↑ STRONG';
+    case 'LONG': return '↑ LONG';
+    case 'SHORT': return '↓ SHORT';
+    case 'STRONG_SHORT': return '↓ STRONG';
+    default: return '—';
+  }
+}
+
+export function haTrendLabel(trend: number, consecutive: number): string {
+  if (trend === 1) return `▲${consecutive}`;
+  if (trend === -1) return `▼${consecutive}`;
+  return '—';
+}
+
+export function classifyHaTrend(trend: number): string {
+  if (trend === 1) return 'signal-buy';
+  if (trend === -1) return 'signal-sell';
+  return 'signal-neutral';
+}
+
+export function setupDisplayLabel(label: string, conviction: number): string {
+  if (label === '—' || conviction === 0) return '—';
+  return conviction > 0 ? `${label}` : label;
+}
+
+export function zonePositionLabel(position: string | null): string {
+  switch (position) {
+    case 'at_demand': return 'D';
+    case 'at_supply': return 'S';
+    case 'near_demand': return '↓D';
+    case 'near_supply': return '↑S';
+    case 'between': return 'M';
+    default: return '—';
+  }
+}
+
+export function mtfDirShort(dir: string): string {
+  if (dir === 'BUY') return 'B';
+  if (dir === 'SELL') return 'S';
+  return '—';
+}
+
+export function classifyMtfDir(dir: string): string {
+  if (dir === 'BUY') return 'signal-buy';
+  if (dir === 'SELL') return 'signal-sell';
+  return 'signal-neutral';
+}
+
+export function chartSignalLabel(signal: string): string {
+  if (signal === 'BUY') return 'BUY';
+  if (signal === 'SELL') return 'SELL';
+  return '—';
 }

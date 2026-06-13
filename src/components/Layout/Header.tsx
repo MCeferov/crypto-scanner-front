@@ -3,6 +3,7 @@ import { Link, useLocation } from 'wouter';
 import { useMarket } from '../../context/MarketContext';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/button';
+import { ThemeToggle } from '../ThemeToggle';
 
 export function Header() {
   const { wsConnected, wsReconnecting, loadingProgress, coins } = useMarket();
@@ -84,6 +85,8 @@ export function Header() {
               {user.username}
             </span>
           )}
+
+          <ThemeToggle />
 
           <Button variant="outline" size="sm" onClick={handleLogout} className="text-xs h-7">
             Logout

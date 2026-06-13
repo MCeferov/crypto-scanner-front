@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from 'next-themes';
 import { Route, Switch } from 'wouter';
 import { AuthProvider } from './context/AuthContext';
 import { MarketProvider } from './context/MarketContext';
@@ -39,16 +40,18 @@ function AuthenticatedApp() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <Switch>
-          <Route path="/login" component={LoginPage} />
-          <Route path="/register" component={RegisterPage} />
-          <Route>
-            <AuthenticatedApp />
-          </Route>
-        </Switch>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="crypto-scanner-theme">
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <Switch>
+            <Route path="/login" component={LoginPage} />
+            <Route path="/register" component={RegisterPage} />
+            <Route>
+              <AuthenticatedApp />
+            </Route>
+          </Switch>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

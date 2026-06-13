@@ -1,9 +1,13 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useMarket, type SortKey, type RsiTf, ALL_RSI_TFS, RSI_TF_SORT } from '../../context/MarketContext';
+import {
+  useMarket, type SortKey, type RsiTf, type ExtraCol,
+  ALL_RSI_TFS, RSI_TF_SORT, ALL_EXTRA_COLS, EXTRA_COL_LABELS,
+} from '../../context/MarketContext';
 import { HeatmapRow } from './HeatmapRow';
 
 interface ColDef {
+  id: string;
   sk: SortKey | null;
   label: string;
   sub?: string;
@@ -14,24 +18,34 @@ interface ColDef {
 }
 
 const STATIC_LEFT: ColDef[] = [
-  { sk: null,         label: '#',      align: 'center', minWidth: 38,  sticky: true, stickyLeft: 0  },
-  { sk: 'symbol',     label: 'Asset',  align: 'left',   minWidth: 110, sticky: true, stickyLeft: 38 },
-  { sk: 'price',      label: 'Price',  align: 'right',  minWidth: 100 },
+  { id: 'rank',     sk: null,     label: '#',     align: 'center', minWidth: 38,  sticky: true, stickyLeft: 0  },
+  { id: 'asset',    sk: 'symbol', label: 'Asset', align: 'left',   minWidth: 110, sticky: true, stickyLeft: 38 },
+  { id: 'price',    sk: 'price',  label: 'Price', align: 'right',  minWidth: 100 },
 ];
 
-const STATIC_RIGHT: ColDef[] = [
-  { sk: 'macd',       label: 'MACD',   sub: 'hist',   align: 'center', minWidth: 68 },
-  { sk: 'volume',     label: 'Volume', sub: '24h',    align: 'right',  minWidth: 76 },
-  { sk: null,         label: 'ATR',    sub: '%',      align: 'center', minWidth: 54 },
-  { sk: null,         label: 'Stoch',  sub: 'RSI',    align: 'center', minWidth: 62 },
-  { sk: 'superTrend', label: 'ST',     sub: 'trend',  align: 'center', minWidth: 58 },
-  { sk: null,         label: 'BB',     sub: '%B',     align: 'center', minWidth: 52 },
-  { sk: 'trendScore', label: 'Trend',  sub: 'Score',  align: 'center', minWidth: 88 },
-  { sk: 'signal',     label: 'Signal', align: 'center', minWidth: 88 },
+const EXTRA_COL_DEFS: Record<ExtraCol, ColDef> = {
+  macd:   { id: 'macd',   sk: 'macd',   label: 'MACD',   sub: 'hist', align: 'center', minWidth: 68 },
+  volume: { id: 'volume', sk: 'volume', label: 'Volume', sub: '24h',  align: 'right',  minWidth: 76 },
+  atr:    { id: 'atr',    sk: null,     label: 'ATR',    sub: '%',    align: 'center', minWidth: 54 },
+  stoch:  { id: 'stoch',  sk: null,     label: 'Stoch',  sub: 'RSI',  align: 'center', minWidth: 62 },
+  st:     { id: 'st',     sk: 'superTrend', label: 'ST', sub: 'trend', align: 'center', minWidth: 58 },
+  bb:     { id: 'bb',     sk: null,     label: 'BB',     sub: '%B',   align: 'center', minWidth: 52 },
+};
+
+const CORE_RIGHT: ColDef[] = [
+  { id: 'trend',    sk: 'trendScore', label: 'Trend', sub: 'Score', align: 'center', minWidth: 80 },
+  { id: 'mtf',      sk: null,         label: 'TF',    sub: '15·30·1H·4H', align: 'center', minWidth: 108 },
+  { id: 'chartSig', sk: 'chartSignal', label: 'Chart', sub: 'Signal', align: 'center', minWidth: 64 },
+  { id: 'ha',       sk: 'haSignal',   label: 'HA',    sub: '15m',   align: 'center', minWidth: 44 },
+  { id: 'zone',     sk: null,         label: 'Zone',  sub: 'S/D',   align: 'center', minWidth: 44 },
+  { id: 'break',    sk: 'zoneBreakout', label: 'Break', sub: 'Dir', align: 'center', minWidth: 68 },
+  { id: 'sl',       sk: 'stopLoss',   label: 'SL',    align: 'right',  minWidth: 72 },
+  { id: 'tp',       sk: 'takeProfit', label: 'TP',    align: 'right',  minWidth: 72 },
+  { id: 'rr',       sk: 'riskReward', label: 'R:R',   align: 'center', minWidth: 44 },
+  { id: 'setup',    sk: 'setup',      label: 'Setup', sub: 'conv',  align: 'center', minWidth: 88 },
 ];
 
 const RSI_TF_LABELS: Record<RsiTf, string> = { '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' };
-
 const ROW_HEIGHT = 44;
 
 function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
@@ -40,7 +54,10 @@ function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
 }
 
 export function HeatmapTable() {
-  const { filteredCoins, loading, sortKey, sortDir, handleSort, visibleRsiCols, toggleRsiCol } = useMarket();
+  const {
+    filteredCoins, loading, sortKey, sortDir, handleSort,
+    visibleRsiCols, toggleRsiCol, visibleExtraCols, toggleExtraCol,
+  } = useMarket();
   const parentRef = useRef<HTMLDivElement>(null);
 
   const rowVirtualizer = useVirtualizer({
@@ -50,19 +67,22 @@ export function HeatmapTable() {
     overscan: 12,
   });
 
-  const allCols: ColDef[] = [
-    ...STATIC_LEFT,
-    ...visibleRsiCols.map(tf => ({
+  const allCols: ColDef[] = useMemo(() => {
+    const rsiCols: ColDef[] = visibleRsiCols.map(tf => ({
+      id: `rsi-${tf}`,
       sk: RSI_TF_SORT[tf] as SortKey,
       label: 'RSI',
       sub: RSI_TF_LABELS[tf],
       align: 'center' as const,
       minWidth: 60,
-    })),
-    ...STATIC_RIGHT,
-  ];
+    }));
+    const extraCols = ALL_EXTRA_COLS
+      .filter(c => visibleExtraCols.includes(c))
+      .map(c => EXTRA_COL_DEFS[c]);
+    return [...STATIC_LEFT, ...rsiCols, ...extraCols, ...CORE_RIGHT];
+  }, [visibleRsiCols, visibleExtraCols]);
 
-  const renderHeader = useCallback((col: ColDef, idx: number) => {
+  const renderHeader = useCallback((col: ColDef) => {
     const isActive = col.sk !== null && sortKey === col.sk;
     const style: React.CSSProperties = {
       minWidth: col.minWidth,
@@ -86,7 +106,7 @@ export function HeatmapTable() {
     }
     const justify = col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start';
     return (
-      <th key={`${col.label}-${col.sub ?? idx}`} style={style} onClick={() => col.sk && handleSort(col.sk)}>
+      <th key={col.id} style={style} onClick={() => col.sk && handleSort(col.sk)}>
         <div className={`flex items-center gap-1 ${justify}`}>
           <span>{col.label}</span>
           {col.sub && <span style={{ color: 'var(--dim)', fontWeight: 400, fontSize: 9 }}>{col.sub}</span>}
@@ -96,27 +116,52 @@ export function HeatmapTable() {
     );
   }, [sortKey, sortDir, handleSort]);
 
-  /* RSI column toggles */
-  const renderRsiToggles = () => (
-    <div className="flex items-center gap-1.5 px-4 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
-      <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>RSI columns:</span>
-      {ALL_RSI_TFS.map(tf => {
-        const on = visibleRsiCols.includes(tf);
-        return (
-          <button
-            key={tf}
-            onClick={() => toggleRsiCol(tf)}
-            className="text-[10px] px-2 py-0.5 rounded font-semibold transition-all"
-            style={{
-              background: on ? 'rgba(240,185,11,.15)' : 'var(--elevated)',
-              color: on ? '#f0b90b' : 'var(--dim)',
-              border: `1px solid ${on ? 'rgba(240,185,11,.35)' : 'var(--border)'}`,
-            }}
-          >
-            {RSI_TF_LABELS[tf]}
-          </button>
-        );
-      })}
+  const renderColToggles = () => (
+    <div
+      className="flex items-center gap-3 px-4 py-2 border-b flex-wrap"
+      style={{ borderColor: 'var(--border)' }}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>RSI:</span>
+        {ALL_RSI_TFS.map(tf => {
+          const on = visibleRsiCols.includes(tf);
+          return (
+            <button
+              key={tf}
+              onClick={() => toggleRsiCol(tf)}
+              className="text-[10px] px-2 py-0.5 rounded font-semibold transition-all"
+              style={{
+                background: on ? 'rgba(240,185,11,.15)' : 'var(--elevated)',
+                color: on ? '#f0b90b' : 'var(--dim)',
+                border: `1px solid ${on ? 'rgba(240,185,11,.35)' : 'var(--border)'}`,
+              }}
+            >
+              {RSI_TF_LABELS[tf]}
+            </button>
+          );
+        })}
+      </div>
+      <div className="w-px h-4" style={{ background: 'var(--border)' }} />
+      <div className="flex items-center gap-1.5">
+        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>Extra:</span>
+        {ALL_EXTRA_COLS.map(col => {
+          const on = visibleExtraCols.includes(col);
+          return (
+            <button
+              key={col}
+              onClick={() => toggleExtraCol(col)}
+              className="text-[10px] px-2 py-0.5 rounded font-semibold transition-all"
+              style={{
+                background: on ? 'rgba(100,116,139,.15)' : 'var(--elevated)',
+                color: on ? 'var(--text)' : 'var(--dim)',
+                border: `1px solid ${on ? 'var(--border-lite)' : 'var(--border)'}`,
+              }}
+            >
+              {EXTRA_COL_LABELS[col]}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 
@@ -137,15 +182,11 @@ export function HeatmapTable() {
 
   return (
     <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-      {renderRsiToggles()}
-      <div
-        ref={parentRef}
-        className="overflow-auto"
-        style={{ maxHeight: 'calc(100vh - 270px)' }}
-      >
+      {renderColToggles()}
+      <div ref={parentRef} className="overflow-auto" style={{ maxHeight: 'calc(100vh - 270px)' }}>
         <table className="w-full heatmap-table" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <thead className="sticky top-0 z-30">
-            <tr>{allCols.map((col, idx) => renderHeader(col, idx))}</tr>
+            <tr>{allCols.map(col => renderHeader(col))}</tr>
           </thead>
           <tbody>
             {filteredCoins.length === 0 && !loading ? (
@@ -167,6 +208,8 @@ export function HeatmapTable() {
                       coin={coin}
                       rank={vRow.index + 1}
                       visibleRsiCols={visibleRsiCols}
+                      visibleExtraCols={visibleExtraCols}
+                      visibleColIds={allCols.map(c => c.id)}
                     />
                   );
                 })}

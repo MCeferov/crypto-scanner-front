@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'wouter';
+import { ThemeToggle } from '../ThemeToggle';
 
 interface AuthLayoutProps {
   title: string;
@@ -11,9 +12,12 @@ interface AuthLayoutProps {
 export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProps) {
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4 py-10"
+      className="min-h-screen flex items-center justify-center px-4 py-10 relative"
       style={{ background: 'var(--bg)' }}
     >
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2.5 justify-center mb-8">
           <div
@@ -32,7 +36,7 @@ export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProp
           style={{
             background: 'var(--surface)',
             borderColor: 'var(--border)',
-            boxShadow: '0 8px 32px rgba(0,0,0,.25)',
+            boxShadow: 'var(--card-shadow)',
           }}
         >
           <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text)' }}>{title}</h1>

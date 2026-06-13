@@ -28,7 +28,7 @@ export interface Kline {
 const EXCLUDED = ['UPUSDT', 'DOWNUSDT', 'BULLUSDT', 'BEARUSDT', 'TUSDT'];
 const EXCLUDED_FRAGMENTS = ['UP', 'DOWN', 'BULL', 'BEAR', 'LEVERAGE'];
 
-const KLINE_TIMEFRAMES = ['15m', '1h', '4h', '1d'] as const;
+const KLINE_TIMEFRAMES = ['15m', '30m', '1h', '4h', '1d'] as const;
 const KLINE_LIMIT = 200;
 
 function sleep(ms: number) {
@@ -49,6 +49,11 @@ function isValidPair(symbol: string): boolean {
 /** Minimum candles needed: MACD (35) on 1h, RSI (15) on 15m */
 export function hasMinimumKlineData(klineMap: Record<string, Kline[]>): boolean {
   return (klineMap['1h']?.length ?? 0) >= 35 && (klineMap['15m']?.length ?? 0) >= 15;
+}
+
+/** Relaxed threshold for partial indicator compute when a symbol fails full fetch */
+export function hasPartialKlineData(klineMap: Record<string, Kline[]>): boolean {
+  return (klineMap['1h']?.length ?? 0) >= 20 || (klineMap['15m']?.length ?? 0) >= 20;
 }
 
 export async function getTopUSDTPairs(limit = 100): Promise<Ticker24h[]> {
@@ -184,6 +189,24 @@ export async function batchFetchKlines(
         results.set(sym, klines);
       }
     });
+
+    // Final retry — one symbol at a time for stubborn rate-limit failures
+    const stillFailed = symbols.filter(sym => {
+      const klines = results.get(sym);
+      return !klines || !hasMinimumKlineData(klines);
+    });
+    if (stillFailed.length > 0) {
+      await sleep(3000);
+      for (const sym of stillFailed) {
+        try {
+          const klines = await getAllKlines(sym);
+          if (hasMinimumKlineData(klines) || hasPartialKlineData(klines)) {
+            results.set(sym, klines);
+          }
+        } catch { /* skip */ }
+        await sleep(400);
+      }
+    }
   }
 
   return results;

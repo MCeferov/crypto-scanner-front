@@ -5,6 +5,7 @@ import { useMarket } from '../context/MarketContext';
 import { TradingChart } from '../components/Chart/TradingChart';
 import { CoinHeader } from '../components/CoinDetail/CoinHeader';
 import { AIAnalysisPanel } from '../components/CoinDetail/AIAnalysisPanel';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { analyzeFromCoin } from '../services/aiAnalysis';
 
 export function CoinDetailPage() {
@@ -22,22 +23,27 @@ export function CoinDetailPage() {
 
   if (!symbol) {
     return (
-      <div className="flex items-center justify-center h-screen text-[#8b949e]">
+      <div className="flex items-center justify-center h-screen" style={{ color: 'var(--chart-text)' }}>
         Invalid symbol
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0d1117] overflow-hidden">
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-[#21262d] bg-[#0d1117]">
+    <div className="h-screen flex flex-col overflow-hidden" style={{ background: 'var(--chart-bg)' }}>
+      <div
+        className="flex items-center justify-between gap-3 px-4 py-2 border-b"
+        style={{ borderColor: 'var(--chart-border)', background: 'var(--chart-bg)' }}
+      >
         <button
           onClick={() => setLocation('/')}
-          className="flex items-center gap-1.5 text-xs text-[#8b949e] hover:text-[#e6edf3] transition-colors"
+          className="flex items-center gap-1.5 text-xs transition-colors hover:opacity-80"
+          style={{ color: 'var(--chart-text)' }}
         >
           <ArrowLeft size={14} />
           Back to Scanner
         </button>
+        <ThemeToggle />
       </div>
 
       <CoinHeader coin={coin} symbol={symbol} />
@@ -47,13 +53,15 @@ export function CoinDetailPage() {
           <TradingChart symbol={symbol} />
         </div>
 
-        <div className="w-[300px] shrink-0 border-l border-[#21262d] bg-[#0d1117] overflow-hidden hidden lg:block">
+        <div
+          className="w-[300px] shrink-0 border-l overflow-hidden hidden lg:block"
+          style={{ borderColor: 'var(--chart-border)', background: 'var(--chart-bg)' }}
+        >
           <AIAnalysisPanel analysis={analysis} loading={!coin?.indicatorsLoaded} />
         </div>
       </div>
 
-      {/* Mobile AI panel */}
-      <div className="lg:hidden border-t border-[#21262d] max-h-[240px] overflow-y-auto">
+      <div className="lg:hidden border-t max-h-[240px] overflow-y-auto" style={{ borderColor: 'var(--chart-border)' }}>
         <AIAnalysisPanel analysis={analysis} loading={!coin?.indicatorsLoaded} />
       </div>
     </div>

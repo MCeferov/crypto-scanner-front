@@ -14,7 +14,10 @@ export function TradingChart({ symbol }: TradingChartProps) {
   } = useTradingChart(symbol);
 
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] rounded-lg border border-[#21262d] overflow-hidden">
+    <div
+      className="flex flex-col h-full rounded-lg border overflow-hidden"
+      style={{ background: 'var(--chart-bg)', borderColor: 'var(--chart-border)' }}
+    >
       <ChartToolbar
         timeframe={timeframe}
         onTimeframeChange={setTimeframe}
@@ -26,7 +29,10 @@ export function TradingChart({ symbol }: TradingChartProps) {
 
       <div className="relative flex-1 min-h-[500px]">
         {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0d1117]/80">
+          <div
+            className="absolute inset-0 z-10 flex items-center justify-center"
+            style={{ background: 'color-mix(in srgb, var(--chart-bg) 80%, transparent)' }}
+          >
             <div className="w-7 h-7 rounded-full border-2 border-t-transparent animate-spin"
               style={{ borderColor: 'rgba(240,185,11,0.2)', borderTopColor: '#f0b90b' }} />
           </div>
@@ -39,9 +45,18 @@ export function TradingChart({ symbol }: TradingChartProps) {
         <div ref={containerRef} className="w-full h-full" />
       </div>
 
-      <div className="px-3 py-1.5 border-t border-[#21262d] text-[10px] text-[#484f58]">
+      <div
+        className="px-3 py-1.5 border-t text-[10px]"
+        style={{ borderColor: 'var(--chart-border)', color: 'var(--chart-text-dim)' }}
+      >
         Charts by{' '}
-        <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="text-[#8b949e] hover:text-[#e6edf3]">
+        <a
+          href="https://www.tradingview.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:opacity-80 transition-opacity"
+          style={{ color: 'var(--chart-text)' }}
+        >
           TradingView
         </a>
         {' '}· Binance real-time data

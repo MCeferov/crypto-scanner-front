@@ -39,12 +39,31 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
   bollingerBands: { period: 20, stdDev: 2, enabled: true },
 };
 
-export const CHART_THEME = {
-  background: '#0d1117',
-  text: '#8b949e',
-  grid: '#1c2128',
-  border: '#21262d',
-  crosshair: '#484f58',
+export interface ChartThemeColors {
+  background: string;
+  text: string;
+  grid: string;
+  border: string;
+  crosshair: string;
+  upColor: string;
+  downColor: string;
+  volumeUp: string;
+  volumeDown: string;
+  bbUpper: string;
+  bbMiddle: string;
+  bbLower: string;
+  stBull: string;
+  stBear: string;
+  rsi: string;
+  macd: string;
+  macdSignal: string;
+  macdHistUp: string;
+  macdHistDown: string;
+  stochK: string;
+  stochD: string;
+}
+
+const CHART_COLORS_SHARED = {
   upColor: '#26a69a',
   downColor: '#ef5350',
   volumeUp: 'rgba(38,166,154,0.5)',
@@ -61,4 +80,29 @@ export const CHART_THEME = {
   macdHistDown: 'rgba(239,83,80,0.7)',
   stochK: '#26a69a',
   stochD: '#ff6d00',
+} as const;
+
+export const CHART_THEME_LIGHT: ChartThemeColors = {
+  background: '#ffffff',
+  text: '#64748b',
+  grid: '#f1f5f9',
+  border: '#e2e8f0',
+  crosshair: '#94a3b8',
+  ...CHART_COLORS_SHARED,
 };
+
+export const CHART_THEME_DARK: ChartThemeColors = {
+  background: '#0d1117',
+  text: '#8b949e',
+  grid: '#1c2128',
+  border: '#21262d',
+  crosshair: '#484f58',
+  ...CHART_COLORS_SHARED,
+};
+
+/** @deprecated Use getChartTheme() */
+export const CHART_THEME = CHART_THEME_DARK;
+
+export function getChartTheme(isDark: boolean): ChartThemeColors {
+  return isDark ? CHART_THEME_DARK : CHART_THEME_LIGHT;
+}

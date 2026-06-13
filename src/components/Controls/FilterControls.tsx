@@ -10,6 +10,16 @@ const FILTERS: { key: FilterKey; label: string; color?: string }[] = [
   { key: 'topLosers',  label: '↓ Losers',    color: '#ef5350' },
   { key: 'strongBuy',  label: 'Buy Signals', color: '#26a69a' },
   { key: 'strongSell', label: 'Sell Signals',color: '#ef5350' },
+  { key: 'zoneBuy',    label: 'S/D Buy',     color: '#26a69a' },
+  { key: 'zoneSell',   label: 'S/D Sell',    color: '#ef5350' },
+  { key: 'zoneBreakLong',  label: '↑ Break',  color: '#26a69a' },
+  { key: 'zoneBreakShort', label: '↓ Break',  color: '#ef5350' },
+  { key: 'haBuy',      label: 'HA Buy',      color: '#26a69a' },
+  { key: 'haSell',     label: 'HA Sell',     color: '#ef5350' },
+  { key: 'setupBuy',   label: 'Setup Buy',   color: '#26a69a' },
+  { key: 'setupSell',  label: 'Setup Sell',  color: '#ef5350' },
+  { key: 'chartBuy',   label: 'Chart Buy',   color: '#26a69a' },
+  { key: 'chartSell',  label: 'Chart Sell',  color: '#ef5350' },
 ];
 
 function hexToRgb(hex: string) {

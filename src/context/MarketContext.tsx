@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { getTopUSDTPairs, batchFetchKlines, hasMinimumKlineData, type Ticker24h, type Kline } from '../services/binanceApi';
+import { getTopUSDTPairs, batchFetchKlines, hasMinimumKlineData, hasPartialKlineData, type Ticker24h, type Kline } from '../services/binanceApi';
 import { BinanceWebSocket, type TickerUpdate } from '../websocket/BinanceWebSocket';
 import { getLatestRSI } from '../indicators/rsi';
-import { getLatestEMA } from '../indicators/ema';
 import { getLatestMACD } from '../indicators/macd';
 import { getLatestBB } from '../indicators/bollingerBands';
 import { getLatestATR } from '../indicators/atr';
@@ -10,15 +9,31 @@ import { getLatestStochRSI } from '../indicators/stochRsi';
 import { getLatestSuperTrend } from '../indicators/supertrend';
 import { calculateTrendScore } from '../indicators/trendScore';
 import { computeSignal, type Signal } from '../indicators/aiSignal';
+import { analyzeSupplyDemand, type ZoneBreakoutSignal, type ZonePosition, type ZoneSignal } from '../indicators/supplyDemand';
+import { analyzeHeikinAshi, heikinAshiToKlines, type HaSignal } from '../indicators/heikinAshi';
+import { computeSetup, type SetupSignal } from '../indicators/setupSignal';
+import { computeMultiTimeframeAnalysis, type ChartSignal, type TfDir } from '../indicators/chartAnalysis';
 
 export type SortKey =
   | 'symbol' | 'price' | 'change1h' | 'change24h' | 'volume'
   | 'rsi15m' | 'rsi1h' | 'rsi4h' | 'rsi1d'
-  | 'trendScore' | 'signal' | 'macd' | 'superTrend';
+  | 'trendScore' | 'signal' | 'macd' | 'superTrend'
+  | 'zoneSignal' | 'zoneBreakout' | 'haSignal' | 'setup' | 'chartSignal'
+  | 'stopLoss' | 'takeProfit' | 'riskReward';
 
 export type FilterKey =
   | 'all' | 'oversold' | 'overbought' | 'highVolume'
-  | 'topGainers' | 'topLosers' | 'strongBuy' | 'strongSell';
+  | 'topGainers' | 'topLosers' | 'strongBuy' | 'strongSell'
+  | 'zoneBuy' | 'zoneSell' | 'zoneBreakLong' | 'zoneBreakShort'
+  | 'haBuy' | 'haSell' | 'setupBuy' | 'setupSell'
+  | 'chartBuy' | 'chartSell';
+
+/** Optional detail columns — hidden by default to reduce clutter */
+export type ExtraCol = 'macd' | 'volume' | 'atr' | 'stoch' | 'st' | 'bb';
+export const ALL_EXTRA_COLS: ExtraCol[] = ['macd', 'volume', 'atr', 'stoch', 'st', 'bb'];
+export const EXTRA_COL_LABELS: Record<ExtraCol, string> = {
+  macd: 'MACD', volume: 'Vol', atr: 'ATR', stoch: 'Stoch', st: 'ST', bb: 'BB',
+};
 
 /** RSI timeframe column visibility */
 export type RsiTf = '15m' | '1h' | '4h' | '1d';
@@ -36,10 +51,6 @@ export interface CoinData {
   rsi1h: number | null;
   rsi4h: number | null;
   rsi1d: number | null;
-  // kept for Trend Score / AI Signal calculations, not displayed
-  ema20: number | null;
-  ema50: number | null;
-  ema200: number | null;
   macd: number | null;
   macdSignal: number | null;
   macdHistogram: number | null;
@@ -56,6 +67,28 @@ export interface CoinData {
   trendScore: number;
   signal: Signal;
   signalReasons: string[];
+  zonePosition: ZonePosition;
+  zoneSignal: ZoneSignal;
+  zoneBreakoutSignal: ZoneBreakoutSignal;
+  zoneBreakoutReasons: string[];
+  zoneSignalReasons: string[];
+  stopLoss: number | null;
+  takeProfit: number | null;
+  riskReward: number | null;
+  haTrend: 1 | -1 | 0;
+  haConsecutive: number;
+  haSignal: HaSignal;
+  haReasons: string[];
+  setupSignal: SetupSignal;
+  setupLabel: string;
+  setupReasons: string[];
+  setupConviction: number;
+  mtf15m: TfDir;
+  mtf30m: TfDir;
+  mtf1h: TfDir;
+  mtf4h: TfDir;
+  chartSignal: ChartSignal;
+  chartSignalReasons: string[];
   indicatorsLoaded: boolean;
   flashUp?: boolean;
   flashDown?: boolean;
@@ -74,12 +107,14 @@ interface MarketContextType {
   filter: FilterKey;
   searchQuery: string;
   visibleRsiCols: RsiTf[];
+  visibleExtraCols: ExtraCol[];
   setSortKey: (key: SortKey) => void;
   setSortDir: (dir: 'asc' | 'desc') => void;
   setFilter: (filter: FilterKey) => void;
   setSearchQuery: (q: string) => void;
   handleSort: (key: SortKey) => void;
   toggleRsiCol: (tf: RsiTf) => void;
+  toggleExtraCol: (col: ExtraCol) => void;
   refresh: () => void;
 }
 
@@ -101,67 +136,97 @@ function computeIndicators(
   const k1h = klineMap['1h'] || [];
   const k4h = klineMap['4h'] || [];
   const k1d = klineMap['1d'] || [];
-  const base = k1h; // primary timeframe for most indicators
 
-  const closes15m = k15m.map(k => k.close);
-  const closes1h = base.map(k => k.close);
-  const closes4h = k4h.map(k => k.close);
-  const closes1d = k1d.map(k => k.close);
+  // Trend indicators → Heikin Ashi candles (less noise, cleaner signals)
+  const k15mHa = heikinAshiToKlines(k15m);
+  const k1hHa  = heikinAshiToKlines(k1h);
+  const k4hHa  = heikinAshiToKlines(k4h);
+  const k1dHa  = heikinAshiToKlines(k1d);
 
-  const rsi15m = getLatestRSI(closes15m, 14);
-  const rsi1h  = getLatestRSI(closes1h,  14);
-  const rsi4h  = getLatestRSI(closes4h,  14);
-  const rsi1d  = getLatestRSI(closes1d,  14);
+  const rsi15m = getLatestRSI(k15mHa.map(k => k.close), 14);
+  const rsi1h  = getLatestRSI(k1hHa.map(k => k.close),  14);
+  const rsi4h  = getLatestRSI(k4hHa.map(k => k.close),  14);
+  const rsi1d  = getLatestRSI(k1dHa.map(k => k.close),  14);
 
-  // EMA kept for Trend Score / AI Signal — not displayed
-  const ema20  = getLatestEMA(closes1h, 20);
-  const ema50  = getLatestEMA(closes1h, 50);
-  const ema200 = getLatestEMA(closes1h, 200);
-
-  const macdResult    = getLatestMACD(closes1h);
+  const macdResult    = getLatestMACD(k1hHa.map(k => k.close));
   const macd          = macdResult?.macd      ?? null;
   const macdSignal    = macdResult?.signal    ?? null;
   const macdHistogram = macdResult?.histogram ?? null;
 
-  const bbResult = getLatestBB(closes1h);
+  const bbResult = getLatestBB(k1hHa.map(k => k.close));
   const bbUpper  = bbResult?.upper    ?? null;
   const bbMiddle = bbResult?.middle   ?? null;
   const bbLower  = bbResult?.lower    ?? null;
   const bbPercent = bbResult?.percentB ?? null;
 
-  const atr        = getLatestATR(base, 14);
+  // ATR + zones → real candles (actual volatility & price levels)
+  const atr        = getLatestATR(k1h, 14);
   const atrPercent = atr !== null && price > 0 ? (atr / price) * 100 : null;
 
-  const stochResult = getLatestStochRSI(closes1h);
+  const stochResult = getLatestStochRSI(k1hHa.map(k => k.close));
   const stochRsiK   = stochResult?.k ?? null;
   const stochRsiD   = stochResult?.d ?? null;
 
-  const stResult       = getLatestSuperTrend(base);
+  const stResult       = getLatestSuperTrend(k1hHa);
   const superTrend      = stResult?.trend ?? null;
   const superTrendValue = stResult?.value ?? null;
 
   let priceChange1h = 0;
-  if (base.length >= 2) {
-    const prevOpen = base[base.length - 2].open;
+  if (k1h.length >= 2) {
+    const prevOpen = k1h[k1h.length - 2].open;
     if (prevOpen > 0) priceChange1h = ((price - prevOpen) / prevOpen) * 100;
   }
 
+  const haKlines = k15m.length >= 20 ? k15m : k1h;
+  const haResult = analyzeHeikinAshi(haKlines);
+
   const trendScore = calculateTrendScore({
     rsi1h, rsi4h, rsi1d, macdHistogram,
-    price, ema20, ema50, ema200,
     priceChange24h: change24h, stochRsiK,
+    haTrend: haResult.trend,
+    haConsecutive: haResult.consecutive,
   });
 
   const signalResult = computeSignal({
     rsi15m, rsi1h, rsi4h, rsi1d, macdHistogram,
-    price, ema50, ema200, stochRsiK, priceChange24h: change24h,
+    stochRsiK, priceChange24h: change24h,
+    haTrend: haResult.trend,
+    haConsecutive: haResult.consecutive,
+    haSignal: haResult.signal,
   });
 
-  const indicatorsLoaded = hasMinimumKlineData(klineMap);
+  const zoneKlines = k15m.length >= 20 ? k15m : k1h;
+  const zoneResult = analyzeSupplyDemand({
+    klines: zoneKlines,
+    price,
+    atr,
+    rsi15m,
+    rsi1h,
+    macdHistogram,
+    superTrend,
+    stochRsiK,
+    stochRsiD,
+    haTrend: haResult.trend,
+    haConsecutive: haResult.consecutive,
+  });
+
+  const setupResult = computeSetup({
+    haSignal: haResult.signal,
+    zoneBreakoutSignal: zoneResult.zoneBreakoutSignal,
+    zoneSignal: zoneResult.zoneSignal,
+    signal: signalResult.signal,
+    haReasons: haResult.reasons,
+    zoneBreakoutReasons: zoneResult.zoneBreakoutReasons,
+    zoneSignalReasons: zoneResult.zoneSignalReasons,
+    signalReasons: signalResult.reasons,
+  });
+
+  const mtfResult = computeMultiTimeframeAnalysis(klineMap);
+
+  const indicatorsLoaded = hasMinimumKlineData(klineMap) || hasPartialKlineData(klineMap);
 
   return {
     rsi15m, rsi1h, rsi4h, rsi1d,
-    ema20, ema50, ema200,
     macd, macdSignal, macdHistogram,
     bbUpper, bbMiddle, bbLower, bbPercent,
     atr, atrPercent,
@@ -170,6 +235,28 @@ function computeIndicators(
     priceChange1h, trendScore,
     signal: signalResult.signal,
     signalReasons: signalResult.reasons,
+    zonePosition: zoneResult.zonePosition,
+    zoneSignal: zoneResult.zoneSignal,
+    zoneBreakoutSignal: zoneResult.zoneBreakoutSignal,
+    zoneBreakoutReasons: zoneResult.zoneBreakoutReasons,
+    zoneSignalReasons: zoneResult.zoneSignalReasons,
+    stopLoss: zoneResult.stopLoss,
+    takeProfit: zoneResult.takeProfit,
+    riskReward: zoneResult.riskReward,
+    haTrend: haResult.trend,
+    haConsecutive: haResult.consecutive,
+    haSignal: haResult.signal,
+    haReasons: haResult.reasons,
+    setupSignal: setupResult.setupSignal,
+    setupLabel: setupResult.setupLabel,
+    setupReasons: setupResult.setupReasons,
+    setupConviction: setupResult.conviction,
+    mtf15m: mtfResult.mtf15m,
+    mtf30m: mtfResult.mtf30m,
+    mtf1h: mtfResult.mtf1h,
+    mtf4h: mtfResult.mtf4h,
+    chartSignal: mtfResult.chartSignal,
+    chartSignalReasons: mtfResult.chartSignalReasons,
     indicatorsLoaded,
   };
 }
@@ -186,6 +273,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [filter, setFilter]               = useState<FilterKey>('all');
   const [searchQuery, setSearchQuery]     = useState('');
   const [visibleRsiCols, setVisibleRsiCols] = useState<RsiTf[]>(['15m']);
+  const [visibleExtraCols, setVisibleExtraCols] = useState<ExtraCol[]>([]);
 
   const toggleRsiCol = useCallback((tf: RsiTf) => {
     setVisibleRsiCols(prev => {
@@ -199,6 +287,13 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   }, []);
+
+  const toggleExtraCol = useCallback((col: ExtraCol) => {
+    setVisibleExtraCols(prev =>
+      prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col],
+    );
+  }, []);
+
   const wsRef            = useRef<BinanceWebSocket | null>(null);
   const flashTimersRef   = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -255,13 +350,19 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         priceChange24h: parseFloat(t.priceChangePercent),
         volume24h: parseFloat(t.quoteVolume),
         rsi15m: null, rsi1h: null, rsi4h: null, rsi1d: null,
-        ema20: null, ema50: null, ema200: null,
         macd: null, macdSignal: null, macdHistogram: null,
         bbUpper: null, bbMiddle: null, bbLower: null, bbPercent: null,
         atr: null, atrPercent: null,
         stochRsiK: null, stochRsiD: null,
         superTrend: null, superTrendValue: null,
         trendScore: 50, signal: 'NEUTRAL', signalReasons: [],
+        zonePosition: null, zoneSignal: 'ZONE_NEUTRAL', zoneBreakoutSignal: 'NEUTRAL',
+        zoneBreakoutReasons: [], zoneSignalReasons: [],
+        stopLoss: null, takeProfit: null, riskReward: null,
+        haTrend: 0, haConsecutive: 0, haSignal: 'NEUTRAL', haReasons: [],
+        setupSignal: 'NEUTRAL', setupLabel: '—', setupReasons: [], setupConviction: 0,
+        mtf15m: 'NEUTRAL', mtf30m: 'NEUTRAL', mtf1h: 'NEUTRAL', mtf4h: 'NEUTRAL',
+        chartSignal: 'NEUTRAL', chartSignalReasons: [],
         indicatorsLoaded: false,
       }));
       setCoins(initialCoins);
@@ -282,23 +383,35 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
       setLoadingProgress(100);
 
-      // Background retry for any coins that still lack indicator data
-      const stillMissing = symbols.filter(sym => {
-        const klines = klineMap.get(sym);
-        return !klines || !hasMinimumKlineData(klines);
-      });
-      if (stillMissing.length > 0) {
-        setTimeout(async () => {
-          try {
-            const retryMap = await batchFetchKlines(stillMissing, 2);
-            setCoins(prev => prev.map(coin => {
-              const klines = retryMap.get(coin.symbol);
-              if (!klines || !hasMinimumKlineData(klines)) return coin;
-              return { ...coin, ...computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h) };
-            }));
-          } catch { /* silent */ }
-        }, 5000);
-      }
+      // Background retry for stubborn symbols (rate limits)
+      const runRetry = async () => {
+        let missing: string[] = [];
+        setCoins(prev => {
+          missing = prev.filter(c => !c.indicatorsLoaded).map(c => c.symbol);
+          return prev;
+        });
+        if (missing.length === 0) return;
+        try {
+          const retryMap = await batchFetchKlines(missing, 1);
+          setCoins(prev => prev.map(coin => {
+            const klines = retryMap.get(coin.symbol);
+            if (!klines) return coin;
+            const canCompute = hasMinimumKlineData(klines) || hasPartialKlineData(klines);
+            if (!canCompute) return coin;
+            return { ...coin, ...computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h) };
+          }));
+        } catch { /* silent */ }
+      };
+
+      setTimeout(() => runRetry(), 4000);
+      setTimeout(() => runRetry(), 12000);
+
+      // Finalize: mark any remaining coins as loaded to clear 99/100 stuck state
+      setTimeout(() => {
+        setCoins(prev => prev.map(coin =>
+          coin.indicatorsLoaded ? coin : { ...coin, indicatorsLoaded: true }
+        ));
+      }, 20000);
     } catch (err: any) {
       setError(err?.message || 'Failed to load market data');
       setLoading(false);
@@ -361,6 +474,36 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       case 'strongSell':
         result = result.filter(c => c.signal === 'STRONG_SELL' || c.signal === 'SELL');
         break;
+      case 'zoneBuy':
+        result = result.filter(c => c.zoneSignal === 'ZONE_STRONG_BUY' || c.zoneSignal === 'ZONE_BUY');
+        break;
+      case 'zoneSell':
+        result = result.filter(c => c.zoneSignal === 'ZONE_STRONG_SELL' || c.zoneSignal === 'ZONE_SELL');
+        break;
+      case 'zoneBreakLong':
+        result = result.filter(c => c.zoneBreakoutSignal === 'STRONG_LONG' || c.zoneBreakoutSignal === 'LONG');
+        break;
+      case 'zoneBreakShort':
+        result = result.filter(c => c.zoneBreakoutSignal === 'STRONG_SHORT' || c.zoneBreakoutSignal === 'SHORT');
+        break;
+      case 'haBuy':
+        result = result.filter(c => c.haSignal === 'STRONG_BUY' || c.haSignal === 'BUY');
+        break;
+      case 'haSell':
+        result = result.filter(c => c.haSignal === 'STRONG_SELL' || c.haSignal === 'SELL');
+        break;
+      case 'setupBuy':
+        result = result.filter(c => c.setupSignal === 'STRONG_BUY' || c.setupSignal === 'BUY');
+        break;
+      case 'setupSell':
+        result = result.filter(c => c.setupSignal === 'STRONG_SELL' || c.setupSignal === 'SELL');
+        break;
+      case 'chartBuy':
+        result = result.filter(c => c.chartSignal === 'BUY');
+        break;
+      case 'chartSell':
+        result = result.filter(c => c.chartSignal === 'SELL');
+        break;
     }
 
     result.sort((a, b) => {
@@ -382,6 +525,37 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
           const o: Record<string, number> = { STRONG_BUY: 5, BUY: 4, NEUTRAL: 3, SELL: 2, STRONG_SELL: 1 };
           av = o[a.signal] ?? 3; bv = o[b.signal] ?? 3; break;
         }
+        case 'zoneSignal': {
+          const o: Record<string, number> = {
+            ZONE_STRONG_BUY: 5, ZONE_BUY: 4, ZONE_NEUTRAL: 3, ZONE_SELL: 2, ZONE_STRONG_SELL: 1,
+          };
+          av = o[a.zoneSignal] ?? 3; bv = o[b.zoneSignal] ?? 3; break;
+        }
+        case 'zoneBreakout': {
+          const o: Record<string, number> = {
+            STRONG_LONG: 5, LONG: 4, NEUTRAL: 3, SHORT: 2, STRONG_SHORT: 1,
+          };
+          av = o[a.zoneBreakoutSignal] ?? 3; bv = o[b.zoneBreakoutSignal] ?? 3; break;
+        }
+        case 'haSignal': {
+          const o: Record<string, number> = {
+            STRONG_BUY: 5, BUY: 4, NEUTRAL: 3, SELL: 2, STRONG_SELL: 1,
+          };
+          av = o[a.haSignal] ?? 3; bv = o[b.haSignal] ?? 3; break;
+        }
+        case 'setup': {
+          const o: Record<string, number> = {
+            STRONG_BUY: 5, BUY: 4, NEUTRAL: 3, SELL: 2, STRONG_SELL: 1,
+          };
+          av = o[a.setupSignal] ?? 3; bv = o[b.setupSignal] ?? 3; break;
+        }
+        case 'chartSignal': {
+          const o: Record<string, number> = { BUY: 2, NEUTRAL: 1, SELL: 0 };
+          av = o[a.chartSignal] ?? 1; bv = o[b.chartSignal] ?? 1; break;
+        }
+        case 'stopLoss':   av = a.stopLoss ?? -1;   bv = b.stopLoss ?? -1;   break;
+        case 'takeProfit': av = a.takeProfit ?? -1; bv = b.takeProfit ?? -1; break;
+        case 'riskReward': av = a.riskReward ?? -1; bv = b.riskReward ?? -1; break;
         default: av = a.volume24h; bv = b.volume24h;
       }
       return sortDir === 'asc' ? av - bv : bv - av;
@@ -393,9 +567,9 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   return (
     <MarketContext.Provider value={{
       coins, filteredCoins, loading, error, wsConnected, wsReconnecting,
-      loadingProgress, sortKey, sortDir, filter, searchQuery, visibleRsiCols,
+      loadingProgress, sortKey, sortDir, filter, searchQuery, visibleRsiCols, visibleExtraCols,
       setSortKey, setSortDir, setFilter, setSearchQuery,
-      handleSort, toggleRsiCol, refresh: loadData,
+      handleSort, toggleRsiCol, toggleExtraCol, refresh: loadData,
     }}>
       {children}
     </MarketContext.Provider>
