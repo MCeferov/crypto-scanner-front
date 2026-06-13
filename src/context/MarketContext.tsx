@@ -32,7 +32,8 @@ export type FilterKey =
   | 'haBuy' | 'haSell' | 'setupBuy' | 'setupSell'
   | 'chartBuy' | 'chartSell'
   | 'researchBuy' | 'researchSell'
-  | 'setupStrongBuy' | 'setupStrongSell';
+  | 'setupStrongBuy' | 'setupStrongSell'
+  | 'candlesMature' | 'candlesFresh' | 'syncStrong';
 
 /** Optional detail columns — hidden by default to reduce clutter */
 export type ExtraCol = 'macd' | 'volume' | 'atr' | 'stoch' | 'st' | 'bb';
@@ -123,6 +124,13 @@ export interface CoinData {
   aiCandles: number;
   zoneCandles: number;
   setupCandles: number;
+  rsiCandles: number;
+  syncStatus: 'STRONG' | 'GOOD' | 'WEAK' | 'MISMATCH';
+  syncScore: number;
+  syncLeader: string;
+  syncLeaderId: string;
+  syncLeaderCandles: number;
+  syncReasons: string[];
   indicatorsLoaded: boolean;
   flashUp?: boolean;
   flashDown?: boolean;
@@ -261,7 +269,8 @@ function computeIndicators(
   const emptyAges = {
     mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
     macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: haResult.consecutive,
-    chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0,
+    chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
+    syncStatus: 'WEAK' as const, syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [],
   };
 
   const indicatorsLoaded = hasMinimumKlineData(klineMap) || hasPartialKlineData(klineMap);
@@ -453,7 +462,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         primaryAnalysisTf: '1h',
         mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
         macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
-        chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0,
+        chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
+    syncStatus: 'WEAK' as const, syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [],
         indicatorsLoaded: false,
       }));
       setCoins(initialCoins);
@@ -619,6 +629,21 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         break;
       case 'researchSell':
         result = result.filter(c => c.researchSignal === 'SELL');
+        break;
+      case 'candlesMature':
+        result = result.filter(c =>
+          c.setupSignal !== 'NEUTRAL' && c.setupCandles >= 3,
+        );
+        break;
+      case 'candlesFresh':
+        result = result.filter(c =>
+          c.setupSignal !== 'NEUTRAL' && c.setupCandles > 0 && c.setupCandles <= 2,
+        );
+        break;
+      case 'syncStrong':
+        result = result.filter(c =>
+          c.syncStatus === 'STRONG' || c.syncStatus === 'GOOD',
+        );
         break;
     }
 

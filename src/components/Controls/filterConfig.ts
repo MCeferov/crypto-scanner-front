@@ -31,6 +31,9 @@ export const FILTER_DEFS: FilterDef[] = [
   { key: 'haSell',         label: 'HA Sell',     color: '#ef5350', group: 'optional' },
   { key: 'setupStrongBuy', label: 'S BUY',       color: '#26a69a', group: 'optional' },
   { key: 'setupStrongSell',label: 'S SELL',      color: '#ef5350', group: 'optional' },
+  { key: 'candlesMature',  label: '≥3 Şam',      color: '#f0b90b', group: 'optional' },
+  { key: 'candlesFresh',   label: 'Təzə ≤2',     color: '#f0b90b', group: 'optional' },
+  { key: 'syncStrong',     label: 'Sinxron ✓',   color: '#f0b90b', group: 'optional' },
 ];
 
 export const DEFAULT_FILTER_KEYS = FILTER_DEFS.filter(f => f.group === 'default').map(f => f.key);

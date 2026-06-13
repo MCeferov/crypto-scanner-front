@@ -1,5 +1,7 @@
 import type { CoinData } from '../context/MarketContext';
 import type { ResearchSignal } from './marketResearch';
+import type { SignalSyncResult } from './signalSync';
+import { leaderWeightMultiplier } from './signalSync';
 
 export type SetupSignal =
   | 'STRONG_BUY'
@@ -93,7 +95,7 @@ export function setupLabelFromSignal(sig: SetupSignal): string {
 }
 
 /** Bütün indikator, qrafik, bazar, zone, risk və HA siqnallarını birləşdirir */
-export function computeUnifiedSetup(coin: CoinData): SetupResult {
+export function computeUnifiedSetup(coin: CoinData, sync?: SignalSyncResult): SetupResult {
   const votes: Vote[] = [];
 
   // ── Qrafik analizi (4 timeframe) ──
@@ -260,7 +262,12 @@ export function computeUnifiedSetup(coin: CoinData): SetupResult {
   }
 
   const totalWeight = votes.reduce((s, v) => s + v.weight, 0);
-  let conviction = votes.reduce((s, v) => s + v.score * v.weight, 0) / totalWeight;
+  let conviction = votes.reduce((s, v) => {
+    const w = sync ? v.weight * leaderWeightMultiplier(v.label, sync) : v.weight;
+    return s + v.score * w;
+  }, 0) / (sync
+    ? votes.reduce((s, v) => s + v.weight * leaderWeightMultiplier(v.label, sync), 0)
+    : totalWeight);
 
   const bullVotes = votes.filter(v => v.score >= 3.6).length;
   const bearVotes = votes.filter(v => v.score <= 2.4).length;
@@ -290,17 +297,30 @@ export function computeUnifiedSetup(coin: CoinData): SetupResult {
   if (coin.trendScore >= 70 && coin.riskReward !== null && coin.riskReward >= 2) conviction += 0.15;
   if (coin.trendScore <= 30) conviction -= 0.15;
 
+  if (sync) conviction += sync.convictionAdjust;
+
   conviction = Math.round(conviction * 100) / 100;
 
   const setupSignal = toSetup(conviction, bullVotes, bearVotes);
   const setupLabel = setupLabelFromSignal(setupSignal);
 
-  const setupReasons = votes
-    .filter(v => v.score >= 4 || v.score <= 2)
-    .sort((a, b) => Math.abs(b.score - 3) - Math.abs(a.score - 3))
-    .flatMap(v => v.reasons.filter(Boolean))
-    .filter((r, i, arr) => arr.indexOf(r) === i)
-    .slice(0, 8);
+  const setupReasonsPrep: string[] = [];
+  if (sync?.syncReasons.length) {
+    setupReasonsPrep.push(...sync.syncReasons.slice(0, 3));
+  }
+  if (sync?.syncLeader && sync.syncLeader !== '—') {
+    setupReasonsPrep.unshift(`Lider: ${sync.syncLeader} (${sync.syncLeaderCandles} şam)`);
+  }
+
+  const setupReasons = [
+    ...setupReasonsPrep,
+    ...votes
+      .filter(v => v.score >= 4 || v.score <= 2)
+      .sort((a, b) => Math.abs(b.score - 3) - Math.abs(a.score - 3))
+      .flatMap(v => v.reasons.filter(Boolean))
+      .filter((r, i, arr) => arr.indexOf(r) === i)
+      .slice(0, 8),
+  ];
 
   if (setupSignal !== 'NEUTRAL') {
     setupReasons.unshift(

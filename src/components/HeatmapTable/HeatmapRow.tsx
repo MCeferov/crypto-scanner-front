@@ -53,9 +53,14 @@ export const HeatmapRow = memo(function HeatmapRow({
   const loaded = coin.indicatorsLoaded;
 
   const setupTooltip = [
+    coin.syncStatus !== 'WEAK' || coin.syncScore > 0
+      ? `Sinxron: ${coin.syncStatus} (${coin.syncScore}%)` : '',
+    coin.syncLeader !== '—' ? `Lider: ${coin.syncLeader} — ${coin.syncLeaderCandles} şam` : '',
     coin.setupCandles > 0 ? `Setup: ${coin.setupCandles} şamdır (min. aktiv müddət)` : '',
     coin.setupCandles <= 2 && coin.setupSignal !== 'NEUTRAL' ? '⚠ Yeni setup — 2 şamdan az' : '',
+    coin.syncStatus === 'MISMATCH' ? '⚠ İndikatorlar sinxron deyil — setup zəiflədildi' : '',
     coin.reversalRisk !== 'NONE' ? `⚠ Flip risk: ${coin.reversalRisk} (${coin.mtfAlignment})` : '',
+    ...coin.syncReasons.slice(0, 4),
     ...coin.reversalReasons,
     '---',
     ...coin.setupReasons,

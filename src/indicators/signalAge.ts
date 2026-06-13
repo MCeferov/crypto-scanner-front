@@ -8,6 +8,7 @@ import type { ChartSignal } from './chartAnalysis';
 import type { SetupSignal } from './setupSignal';
 import type { ZonePosition, ZoneBreakoutSignal } from './supplyDemand';
 import { getLatestStochRSI } from './stochRsi';
+import { getLatestRSI } from './rsi';
 
 const MAX_LOOKBACK = 24;
 
@@ -24,6 +25,7 @@ export interface SignalAges {
   aiCandles: number;
   zoneCandles: number;
   setupCandles: number;
+  rsiCandles: number;
 }
 
 function countMtfPersistence(klines: Kline[], tf: MtfTf): number {
@@ -71,6 +73,23 @@ function stochBias(k: number, d: number): string {
   if (k < 20) return 'low';
   if (k > 80) return 'high';
   return k >= d ? 'bull' : 'bear';
+}
+
+function countRsiPersistence(closes: number[]): number {
+  if (closes.length < 20) return 0;
+  const last = getLatestRSI(closes, 14);
+  if (last === null) return 0;
+  const bull = last < 50;
+
+  let count = 0;
+  for (let back = 0; back < MAX_LOOKBACK && closes.length - back >= 20; back++) {
+    const rsi = getLatestRSI(closes.slice(0, closes.length - back), 14);
+    if (rsi === null) break;
+    const matches = bull ? rsi < 52 : rsi > 48;
+    if (matches) count++;
+    else break;
+  }
+  return count;
 }
 
 function countStochPersistence(closes: number[]): number {
@@ -189,9 +208,12 @@ export function computeSignalAges(input: {
     input.zonePosition, input.zoneBreakoutSignal, haCandles,
   );
 
+  const rsiCandles = countRsiPersistence(input.primaryKlinesHa.map(k => k.close));
+
   const partial: Partial<SignalAges> = {
     mtf15mCandles, mtf30mCandles, mtf1hCandles, mtf4hCandles,
     macdCandles, stCandles, stochCandles, haCandles, chartCandles, aiCandles, zoneCandles,
+    rsiCandles,
   };
 
   const setupCandles = countSetupPersistence(
