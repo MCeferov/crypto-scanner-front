@@ -211,7 +211,7 @@ export function useTradingChart(symbol: string) {
     setError(null);
     try {
       const interval = getBinanceInterval(tf);
-      const klines = await getKlines(sym, interval, 500);
+      const klines = await getKlines(sym, interval, 200);
       klinesRef.current = klines;
       applySeries(klines, s);
       setLoading(false);

@@ -71,6 +71,12 @@ export default defineConfig({
         target: process.env.API_PROXY_TARGET ?? "http://localhost:8080",
         changeOrigin: true,
       },
+      "/binance-api": {
+        target: "https://api.binance.com",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/binance-api/, "/api/v3"),
+      },
     },
   },
   preview: {

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { getTopUSDTPairs, batchFetchKlines, hasMinimumKlineData, hasPartialKlineData, type Ticker24h, type Kline } from '../services/binanceApi';
+import { getTopUSDTPairs, batchFetchKlinesStaged, hasMinimumKlineData, hasPartialKlineData, type Ticker24h, type Kline, BinanceBanError } from '../services/binanceApi';
 import { BinanceWebSocket, type TickerUpdate } from '../websocket/BinanceWebSocket';
 import { getLatestRSI } from '../indicators/rsi';
 import { getLatestMACD } from '../indicators/macd';
@@ -430,7 +430,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     setLoadingProgress(0);
     try {
       const [tickers, fearGreed] = await Promise.all([
-        getTopUSDTPairs(100),
+        getTopUSDTPairs(50),
         fetchFearGreedIndex(),
       ]);
       fearGreedRef.current = fearGreed;
@@ -472,16 +472,16 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       const symbols = initialCoins.map(c => c.symbol);
       const total   = symbols.length;
 
-      const klineMap = await batchFetchKlines(symbols, 3, (done, batchTotal) => {
+      const klineMap = await batchFetchKlinesStaged(symbols, (done, batchTotal) => {
         setLoadingProgress(5 + Math.round((done / batchTotal) * 90));
-      });
+      }, 25);
 
       klineMap.forEach((v, k) => klineCacheRef.current.set(k, v));
 
       setCoins(prev => enrichCoinsWithResearch(
         prev.map(coin => {
           const klines = klineMap.get(coin.symbol);
-          if (!klines) return coin;
+          if (!klines) return { ...coin, indicatorsLoaded: true };
           return { ...coin, ...computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h, activeTfsRef.current) };
         }),
         fearGreedRef.current,
@@ -491,43 +491,11 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
       setLoadingProgress(100);
 
-      // Background retry for stubborn symbols (rate limits)
-      const runRetry = async () => {
-        let missing: string[] = [];
-        setCoins(prev => {
-          missing = prev.filter(c => !c.indicatorsLoaded).map(c => c.symbol);
-          return prev;
-        });
-        if (missing.length === 0) return;
-        try {
-          const retryMap = await batchFetchKlines(missing, 1);
-          retryMap.forEach((v, k) => klineCacheRef.current.set(k, v));
-          setCoins(prev => enrichCoinsWithResearch(
-            prev.map(coin => {
-              const klines = klineCacheRef.current.get(coin.symbol);
-              if (!klines) return coin;
-              const canCompute = hasMinimumKlineData(klines) || hasPartialKlineData(klines);
-              if (!canCompute) return coin;
-              return { ...coin, ...computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h, activeTfsRef.current) };
-            }),
-            fearGreedRef.current,
-            activeTfsRef.current,
-            klineCacheRef.current,
-          ));
-        } catch { /* silent */ }
-      };
-
-      setTimeout(() => runRetry(), 4000);
-      setTimeout(() => runRetry(), 12000);
-
-      // Finalize: mark any remaining coins as loaded to clear 99/100 stuck state
-      setTimeout(() => {
-        setCoins(prev => prev.map(coin =>
-          coin.indicatorsLoaded ? coin : { ...coin, indicatorsLoaded: true }
-        ));
-      }, 20000);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load market data');
+    } catch (err: unknown) {
+      const msg = err instanceof BinanceBanError
+        ? err.message
+        : err instanceof Error ? err.message : 'Failed to load market data';
+      setError(msg);
       setLoading(false);
     }
   }, []);
