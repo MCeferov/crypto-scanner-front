@@ -13,7 +13,8 @@
     "moduleResolution": "bundler",
     "types": ["node", "vite/client"],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@workspace/i18n": ["../../lib/i18n/src/index.ts"]
     }
   },
   "references": [

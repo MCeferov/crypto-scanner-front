@@ -10,12 +10,13 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts';
 import type { Kline } from '../services/binanceApi';
-import { getKlines } from '../services/binanceApi';
+import { getChartKlines } from '../services/klineBatchApi';
 import { ChartKlineWebSocket } from '../services/chartWebSocket';
 import {
   CHART_TIMEFRAMES,
   DEFAULT_INDICATOR_SETTINGS,
   getChartTheme,
+  type ChartAsset,
   type ChartThemeColors,
   type ChartTimeframe,
   type IndicatorSettings,
@@ -65,7 +66,8 @@ function buildChartOptions(theme: ChartThemeColors) {
 
 const PANE_HEIGHTS = { main: 380, rsi: 100, macd: 100, stoch: 100 };
 
-export function useTradingChart(symbol: string) {
+export function useTradingChart(asset: ChartAsset) {
+  const { symbol, type } = asset;
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
   const chartTheme = getChartTheme(isDark);
@@ -206,12 +208,12 @@ export function useTradingChart(symbol: string) {
     chart.timeScale().fitContent();
   }, [removeSeriesSafe, clearIndicatorPanes, addIndicatorPane]);
 
-  const loadData = useCallback(async (sym: string, tf: ChartTimeframe, s: IndicatorSettings) => {
+  const loadData = useCallback(async (sym: string, assetType: ChartAsset['type'], tf: ChartTimeframe, s: IndicatorSettings) => {
     setLoading(true);
     setError(null);
     try {
       const interval = getBinanceInterval(tf);
-      const klines = await getKlines(sym, interval, 200);
+      const klines = await getChartKlines(assetType, sym, interval, 200);
       klinesRef.current = klines;
       applySeries(klines, s);
       setLoading(false);
@@ -291,17 +293,21 @@ export function useTradingChart(symbol: string) {
 
   useEffect(() => {
     if (!symbol) return;
-    loadData(symbol, timeframe, settings);
-  }, [symbol, timeframe, settings, loadData]);
+    loadData(symbol, type, timeframe, settings);
+  }, [symbol, type, timeframe, settings, loadData]);
 
   useEffect(() => {
-    if (!symbol) return;
+    if (!symbol || type !== 'crypto') {
+      wsRef.current?.destroy();
+      wsRef.current = null;
+      return;
+    }
     wsRef.current?.destroy();
     const ws = new ChartKlineWebSocket(symbol, getBinanceInterval(timeframe), handleRealtimeKline);
     ws.connect();
     wsRef.current = ws;
     return () => { ws.destroy(); wsRef.current = null; };
-  }, [symbol, timeframe, getBinanceInterval, handleRealtimeKline]);
+  }, [symbol, type, timeframe, getBinanceInterval, handleRealtimeKline]);
 
   const toggleIndicator = useCallback((key: keyof IndicatorSettings) => {
     setSettings(prev => {

@@ -1,17 +1,23 @@
 import React from 'react';
 import { useTradingChart } from '../../hooks/useTradingChart';
 import { ChartToolbar } from './ChartToolbar';
+import type { ChartAsset } from '../../types/chart';
+import type { AssetType } from '../../types/asset';
 
 interface TradingChartProps {
   symbol: string;
+  type?: AssetType;
 }
 
-export function TradingChart({ symbol }: TradingChartProps) {
+export function TradingChart({ symbol, type = 'crypto' }: TradingChartProps) {
+  const asset: ChartAsset = { symbol, type };
   const {
     containerRef,
     timeframe, setTimeframe, settings, toggleIndicator, togglePanel, updateSettings,
     loading, error,
-  } = useTradingChart(symbol);
+  } = useTradingChart(asset);
+
+  const sourceLabel = type === 'crypto' ? 'Binance real-time data' : 'Yahoo Finance data';
 
   return (
     <div
@@ -59,7 +65,7 @@ export function TradingChart({ symbol }: TradingChartProps) {
         >
           TradingView
         </a>
-        {' '}· Binance real-time data
+        {' '}· {sourceLabel}
       </div>
     </div>
   );

@@ -4,11 +4,14 @@ import type { CoinData, RsiTf, ExtraCol, AnalysisTf } from '../../context/Market
 import { RSICell } from './RSICell';
 import { CandleAge } from './CandleAge';
 import {
-  formatPrice, formatVolume, formatSymbol,
+  formatPrice, formatVolume, formatPercent, formatMarketCap, formatAssetPrice,
   classifySignal, classifyZoneBreakout, classifyHaTrend,
   zoneBreakoutLabel, zonePositionLabel, haTrendLabel,
   mtfDirShort, classifyMtfDir, chartSignalLabel, classifyResearchSignal,
 } from '../../utils/formatters';
+import { TYPE_COLORS } from '../../types/asset';
+import { isCryptoAsset } from '../../utils/assetHelpers';
+import { useT } from '../../context/LocaleContext';
 import { getTrendScoreColor } from '../../utils/colors';
 
 const MTF_COLS: { id: string; key: keyof CoinData; ageKey: keyof CoinData; label: string; tf: AnalysisTf }[] = [
@@ -47,10 +50,20 @@ export const HeatmapRow = memo(function HeatmapRow({
   coin, rank, visibleRsiCols, visibleExtraCols, visibleAnalysisTfs, visibleColIds,
 }: HeatmapRowProps) {
   const [, setLocation] = useLocation();
+  const t = useT();
   const even = rank % 2 === 0;
   const rowBg = even ? 'var(--bg)' : 'var(--surface)';
   const flashClass = coin.flashUp ? 'flash-up' : coin.flashDown ? 'flash-down' : '';
   const loaded = coin.indicatorsLoaded;
+  const typeStyle = TYPE_COLORS[coin.type];
+
+  const handleClick = () => {
+    if (isCryptoAsset(coin)) {
+      setLocation(`/coin/${coin.symbol}`);
+    } else {
+      setLocation(`/asset/${coin.type}/${coin.baseAsset}`);
+    }
+  };
 
   const setupTooltip = [
     coin.syncStatus !== 'WEAK' || coin.syncScore > 0
@@ -71,7 +84,7 @@ export const HeatmapRow = memo(function HeatmapRow({
     <tr
       className={`transition-colors hover:bg-white/[0.04] cursor-pointer ${flashClass}`}
       style={{ background: rowBg, height: 44 }}
-      onClick={() => setLocation(`/coin/${coin.symbol}`)}
+      onClick={handleClick}
     >
       {has(visibleColIds, 'rank') && (
         <td className="px-2 py-2 text-center sticky left-0 z-10" style={{ background: rowBg, minWidth: 38, width: 38 }}>
@@ -80,15 +93,25 @@ export const HeatmapRow = memo(function HeatmapRow({
       )}
 
       {has(visibleColIds, 'asset') && (
-        <td className="px-3 py-2 sticky z-10" style={{ background: rowBg, left: 38, minWidth: 110, width: 110 }}>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 font-bold text-[8px]"
-              style={{ background: 'var(--elevated)', color: '#f0b90b' }}>
-              {formatSymbol(coin.symbol).slice(0, 3)}
+        <td className="px-3 py-2 sticky z-10" style={{ background: rowBg, left: 38, minWidth: 150, width: 150 }}>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 font-bold text-[9px]"
+              style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}>
+              {coin.baseAsset.slice(0, 3)}
             </div>
-            <div>
-              <div className="font-semibold text-xs" style={{ color: 'var(--text)' }}>{formatSymbol(coin.symbol)}</div>
-              <div className="text-[10px]" style={{ color: 'var(--dim)' }}>USDT</div>
+            <div className="min-w-0">
+              <div className="font-semibold text-xs truncate" style={{ color: 'var(--text)' }}>
+                {coin.baseAsset}
+              </div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[10px] truncate" style={{ color: 'var(--dim)' }}>{coin.name}</span>
+                <span
+                  className="text-[8px] px-1 py-px rounded font-semibold shrink-0"
+                  style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}
+                >
+                  {t(`assetType.${coin.type}`)}
+                </span>
+              </div>
             </div>
           </div>
         </td>
@@ -97,8 +120,33 @@ export const HeatmapRow = memo(function HeatmapRow({
       {has(visibleColIds, 'price') && (
         <td className="px-3 py-2 text-right" style={{ minWidth: 100 }}>
           <span className="font-mono font-semibold text-xs" style={{ color: 'var(--text)' }}>
-            ${formatPrice(coin.price)}
+            {formatAssetPrice(coin.price, coin.type)}
           </span>
+        </td>
+      )}
+
+      {has(visibleColIds, 'change') && (
+        <td className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
+          <span
+            className="font-mono text-[11px] font-semibold"
+            style={{ color: coin.priceChange24h > 0 ? '#26a69a' : coin.priceChange24h < 0 ? '#ef5350' : 'var(--muted)' }}
+          >
+            {formatPercent(coin.priceChange24h)}
+          </span>
+        </td>
+      )}
+
+      {has(visibleColIds, 'mcap') && (
+        <td className="px-2 py-2 text-right" style={{ minWidth: 80 }}>
+          <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
+            {formatMarketCap(coin.marketCap)}
+          </span>
+        </td>
+      )}
+
+      {has(visibleColIds, 'volume') && (
+        <td className="px-2 py-2 text-right" style={{ minWidth: 76 }}>
+          <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>{formatVolume(coin.volume24h)}</span>
         </td>
       )}
 
@@ -363,6 +411,10 @@ export const HeatmapRow = memo(function HeatmapRow({
   );
 }, (prev, next) =>
   prev.coin.price === next.coin.price &&
+  prev.coin.priceChange24h === next.coin.priceChange24h &&
+  prev.coin.marketCap === next.coin.marketCap &&
+  prev.coin.name === next.coin.name &&
+  prev.coin.type === next.coin.type &&
   prev.coin.rsi15m === next.coin.rsi15m &&
   prev.coin.rsi1h === next.coin.rsi1h &&
   prev.coin.rsi4h === next.coin.rsi4h &&

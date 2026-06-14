@@ -234,6 +234,95 @@ export function computeMarketResearch(coin: CoinData, ctx: MarketContext): Resea
   };
 }
 
+export function enrichCoinWithResearch(
+  coin: CoinData,
+  ctx: MarketContext,
+  activeTfs: MtfTf[] = ['15m', '30m', '1h', '4h'],
+  klines?: Record<string, Kline[]>,
+): CoinData {
+  const withResearch = { ...coin, ...computeMarketResearch(coin, ctx) };
+
+  const primaryTf = getPrimaryAnalysisTf(activeTfs);
+  const primaryK = klines
+    ? (klines[primaryTf]?.length >= 20 ? klines[primaryTf] : klines['1h'] || [])
+    : [];
+  const haK = klines && activeTfs.includes('15m') && (klines['15m']?.length ?? 0) >= 20
+    ? klines['15m'] : primaryK;
+
+  const preAges = klines && primaryK.length >= 15
+    ? computeSignalAges({
+        klineMap: klines,
+        primaryKlinesHa: heikinAshiToKlines(primaryK),
+        haKlines: haK,
+        chartSignal: withResearch.chartSignal,
+        aiSignal: withResearch.signal,
+        setupSignal: 'NEUTRAL',
+        zonePosition: withResearch.zonePosition,
+        zoneBreakoutSignal: withResearch.zoneBreakoutSignal,
+        mtf15m: withResearch.mtf15m,
+        mtf30m: withResearch.mtf30m,
+        mtf1h: withResearch.mtf1h,
+        mtf4h: withResearch.mtf4h,
+        activeTfs,
+      })
+    : null;
+
+  const sync = computeSignalSync(withResearch, preAges ?? {
+    mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
+    macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
+    chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
+  }, activeTfs);
+
+  const setup = computeUnifiedSetup(withResearch, sync);
+  const reversal = computeReversalRisk({ ...withResearch, ...setup });
+  const adjusted = applyReversalPenalty(setup.setupSignal, setup.setupConviction, reversal.reversalRisk);
+  const synced = applySyncToSetup(adjusted.setupSignal, adjusted.setupConviction, sync);
+
+  const finalAges = preAges && klines
+    ? computeSignalAges({
+        klineMap: klines,
+        primaryKlinesHa: heikinAshiToKlines(primaryK),
+        haKlines: haK,
+        chartSignal: withResearch.chartSignal,
+        aiSignal: withResearch.signal,
+        setupSignal: synced.setupSignal,
+        zonePosition: withResearch.zonePosition,
+        zoneBreakoutSignal: withResearch.zoneBreakoutSignal,
+        mtf15m: withResearch.mtf15m,
+        mtf30m: withResearch.mtf30m,
+        mtf1h: withResearch.mtf1h,
+        mtf4h: withResearch.mtf4h,
+        activeTfs,
+      })
+    : null;
+
+  return {
+    ...withResearch,
+    setupSignal: synced.setupSignal,
+    setupLabel: setupLabelFromSignal(synced.setupSignal),
+    setupReasons: [
+      ...reversal.reversalReasons.filter(r => r.startsWith('⚠')),
+      ...setup.setupReasons,
+    ],
+    setupConviction: synced.conviction,
+    reversalRisk: reversal.reversalRisk,
+    reversalReasons: reversal.reversalReasons,
+    mtfAlignment: reversal.mtfAlignment,
+    riskRewardNote: reversal.riskRewardNote,
+    syncStatus: sync.syncStatus,
+    syncScore: sync.syncScore,
+    syncLeader: sync.syncLeader,
+    syncLeaderId: sync.syncLeaderId,
+    syncLeaderCandles: sync.syncLeaderCandles,
+    syncReasons: sync.syncReasons,
+    ...(finalAges ?? preAges ?? {
+      mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
+      macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
+      chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
+    }),
+  };
+}
+
 export function enrichCoinsWithResearch(
   coins: CoinData[],
   fearGreed: FearGreedData | null,
@@ -242,88 +331,7 @@ export function enrichCoinsWithResearch(
 ): CoinData[] {
   const btc = coins.find(c => c.symbol === 'BTCUSDT');
   const ctx = buildMarketContext(btc, fearGreed);
-  return coins.map(coin => {
-    const withResearch = { ...coin, ...computeMarketResearch(coin, ctx) };
-    const klines = klineCache?.get(coin.symbol);
-
-    const primaryTf = getPrimaryAnalysisTf(activeTfs);
-    const primaryK = klines
-      ? (klines[primaryTf]?.length >= 20 ? klines[primaryTf] : klines['1h'] || [])
-      : [];
-    const haK = klines && activeTfs.includes('15m') && (klines['15m']?.length ?? 0) >= 20
-      ? klines['15m'] : primaryK;
-
-    const preAges = klines && primaryK.length >= 15
-      ? computeSignalAges({
-          klineMap: klines,
-          primaryKlinesHa: heikinAshiToKlines(primaryK),
-          haKlines: haK,
-          chartSignal: withResearch.chartSignal,
-          aiSignal: withResearch.signal,
-          setupSignal: 'NEUTRAL',
-          zonePosition: withResearch.zonePosition,
-          zoneBreakoutSignal: withResearch.zoneBreakoutSignal,
-          mtf15m: withResearch.mtf15m,
-          mtf30m: withResearch.mtf30m,
-          mtf1h: withResearch.mtf1h,
-          mtf4h: withResearch.mtf4h,
-          activeTfs,
-        })
-      : null;
-
-    const sync = computeSignalSync(withResearch, preAges ?? {
-      mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
-      macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
-      chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
-    }, activeTfs);
-
-    const setup = computeUnifiedSetup(withResearch, sync);
-    const reversal = computeReversalRisk({ ...withResearch, ...setup });
-    const adjusted = applyReversalPenalty(setup.setupSignal, setup.setupConviction, reversal.reversalRisk);
-    const synced = applySyncToSetup(adjusted.setupSignal, adjusted.setupConviction, sync);
-
-    const finalAges = preAges && klines
-      ? computeSignalAges({
-          klineMap: klines,
-          primaryKlinesHa: heikinAshiToKlines(primaryK),
-          haKlines: haK,
-          chartSignal: withResearch.chartSignal,
-          aiSignal: withResearch.signal,
-          setupSignal: synced.setupSignal,
-          zonePosition: withResearch.zonePosition,
-          zoneBreakoutSignal: withResearch.zoneBreakoutSignal,
-          mtf15m: withResearch.mtf15m,
-          mtf30m: withResearch.mtf30m,
-          mtf1h: withResearch.mtf1h,
-          mtf4h: withResearch.mtf4h,
-          activeTfs,
-        })
-      : null;
-
-    return {
-      ...withResearch,
-      setupSignal: synced.setupSignal,
-      setupLabel: setupLabelFromSignal(synced.setupSignal),
-      setupReasons: [
-        ...reversal.reversalReasons.filter(r => r.startsWith('⚠')),
-        ...setup.setupReasons,
-      ],
-      setupConviction: synced.conviction,
-      reversalRisk: reversal.reversalRisk,
-      reversalReasons: reversal.reversalReasons,
-      mtfAlignment: reversal.mtfAlignment,
-      riskRewardNote: reversal.riskRewardNote,
-      syncStatus: sync.syncStatus,
-      syncScore: sync.syncScore,
-      syncLeader: sync.syncLeader,
-      syncLeaderId: sync.syncLeaderId,
-      syncLeaderCandles: sync.syncLeaderCandles,
-      syncReasons: sync.syncReasons,
-      ...(finalAges ?? preAges ?? {
-        mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
-        macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
-        chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
-      }),
-    };
-  });
+  return coins.map(coin =>
+    enrichCoinWithResearch(coin, ctx, activeTfs, klineCache?.get(coin.id)),
+  );
 }

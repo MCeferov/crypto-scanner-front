@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Plus, X } from 'lucide-react';
 import { useMarket, type FilterKey } from '../../context/MarketContext';
+import { useT } from '../../context/LocaleContext';
 import {
   FILTER_DEFS, DEFAULT_FILTER_KEYS, OPTIONAL_FILTER_KEYS, getFilterDef,
 } from './filterConfig';
@@ -13,12 +14,13 @@ function hexToRgb(hex: string) {
 }
 
 function FilterButton({
-  f, active, onClick, onRemove,
+  f, active, onClick, onRemove, label,
 }: {
-  f: { key: FilterKey; label: string; color?: string };
+  f: { key: FilterKey; color?: string };
   active: boolean;
   onClick: () => void;
   onRemove?: () => void;
+  label: string;
 }) {
   return (
     <button
@@ -35,7 +37,7 @@ function FilterButton({
         fontWeight: active ? 600 : 400,
       }}
     >
-      {f.label}
+      {label}
       {onRemove && (
         <span
           role="button"
@@ -57,6 +59,7 @@ export function FilterControls() {
     filter, setFilter,
     visibleOptionalFilters, addOptionalFilter, removeOptionalFilter,
   } = useMarket();
+  const t = useT();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -84,6 +87,7 @@ export function FilterControls() {
         <FilterButton
           key={f.key}
           f={f}
+          label={t(f.labelKey)}
           active={filter === f.key}
           onClick={() => setFilter(f.key)}
         />
@@ -93,6 +97,7 @@ export function FilterControls() {
         <FilterButton
           key={f.key}
           f={f}
+          label={t(f.labelKey)}
           active={filter === f.key}
           onClick={() => setFilter(f.key)}
           onRemove={() => removeOptionalFilter(f.key)}
@@ -108,7 +113,7 @@ export function FilterControls() {
             color: 'var(--muted)',
             border: `1px solid ${menuOpen ? 'var(--border-lite)' : 'var(--border)'}`,
           }}
-          title="Add filter"
+          title={t('filter.addFilter')}
         >
           <Plus size={14} />
         </button>
@@ -131,7 +136,7 @@ export function FilterControls() {
                   className="w-full text-left text-xs px-3 py-2 hover:bg-white/[0.04] transition-colors"
                   style={{ color: def.color || 'var(--text)' }}
                 >
-                  {def.label}
+                  {t(def.labelKey)}
                 </button>
               );
             })}
@@ -143,7 +148,7 @@ export function FilterControls() {
             className="absolute left-0 top-full mt-1 z-50 rounded-lg px-3 py-2 text-xs"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--dim)' }}
           >
-            All filters added
+            {t('filter.allAdded')}
           </div>
         )}
       </div>

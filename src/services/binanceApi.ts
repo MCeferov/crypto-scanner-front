@@ -34,6 +34,9 @@ const EXCLUDED = ['UPUSDT', 'DOWNUSDT', 'BULLUSDT', 'BEARUSDT', 'TUSDT'];
 const EXCLUDED_FRAGMENTS = ['UP', 'DOWN', 'BULL', 'BEAR', 'LEVERAGE'];
 
 const ALL_TIMEFRAMES = ['15m', '30m', '1h', '4h', '1d'] as const;
+/** İlk mərhələ — indikatorlar üçün kifayət (3 TF × 50 coin = 150 sorğu) */
+export const ESSENTIAL_TIMEFRAMES = ['15m', '1h', '4h'] as const;
+export const EXTRA_TIMEFRAMES = ['30m', '1d'] as const;
 /** MACD(35) + buffer — limit 100 = weight 1 (200 = weight 2) */
 const KLINE_LIMIT = 100;
 
@@ -152,22 +155,23 @@ export async function get1hKlinePrice(symbol: string): Promise<number | null> {
   }
 }
 
-/** Timeframe-ləri ardıcıl yüklə — paralel burst yox */
+/** Timeframe-ləri paralel yüklə — eyni symbol üçün sürətli */
 export async function getAllKlines(
   symbol: string,
   timeframes: readonly string[] = ALL_TIMEFRAMES,
 ): Promise<Record<string, Kline[]>> {
-  const out: Record<string, Kline[]> = {};
-  for (const tf of timeframes) {
-    try {
-      out[tf] = await getKlines(symbol, tf, KLINE_LIMIT);
-    } catch (err) {
-      if (err instanceof BinanceBanError) throw err;
-      out[tf] = [];
-    }
-    await sleep(80);
-  }
-  return out;
+  const entries = await Promise.all(
+    timeframes.map(async tf => {
+      try {
+        const klines = await getKlines(symbol, tf, KLINE_LIMIT);
+        return [tf, klines] as const;
+      } catch (err) {
+        if (err instanceof BinanceBanError) throw err;
+        return [tf, [] as Kline[]] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
 }
 
 async function fetchSymbolKlines(
@@ -264,6 +268,56 @@ export async function batchFetchKlines(
         results.set(sym, klines);
       }
     });
+  }
+
+  return results;
+}
+
+export interface IncrementalFetchOptions {
+  timeframes?: readonly string[];
+  concurrency?: number;
+  onSymbol?: (
+    symbol: string,
+    klines: Record<string, Kline[]>,
+    done: number,
+    total: number,
+  ) => void;
+}
+
+/** Hər symbol hazır olanda dərhal callback — UI 0/50 gözlətmir */
+export async function batchFetchKlinesIncremental(
+  symbols: string[],
+  opts: IncrementalFetchOptions = {},
+): Promise<Map<string, Record<string, Kline[]>>> {
+  const {
+    timeframes = ESSENTIAL_TIMEFRAMES,
+    concurrency = 4,
+    onSymbol,
+  } = opts;
+
+  const results = new Map<string, Record<string, Kline[]>>();
+  let done = 0;
+  const total = symbols.length;
+
+  async function worker(sym: string) {
+    if (isBinanceBanned()) return;
+    try {
+      const klines = await fetchSymbolKlines(sym, timeframes);
+      results.set(sym, klines);
+      done++;
+      onSymbol?.(sym, klines, done, total);
+    } catch (err) {
+      if (err instanceof BinanceBanError) throw err;
+      results.set(sym, {});
+      done++;
+      onSymbol?.(sym, {}, done, total);
+    }
+  }
+
+  for (let i = 0; i < symbols.length; i += concurrency) {
+    if (isBinanceBanned()) break;
+    const chunk = symbols.slice(i, i + concurrency);
+    await Promise.all(chunk.map(sym => worker(sym)));
   }
 
   return results;

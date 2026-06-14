@@ -1,7 +1,7 @@
 /** Binance REST rate-limit idarəçisi — IP ban (418) qarşısını alır */
 
 const WEIGHT_BUDGET_PER_MIN = 550;
-const MIN_GAP_MS = 120;
+const MIN_GAP_MS = 50;
 
 let bannedUntil = 0;
 let weightUsed = 0;

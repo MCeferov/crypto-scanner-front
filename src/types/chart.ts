@@ -1,4 +1,11 @@
+import type { AssetType } from './asset';
+
 export type ChartTimeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
+
+export interface ChartAsset {
+  symbol: string;
+  type: AssetType;
+}
 
 export const CHART_TIMEFRAMES: { key: ChartTimeframe; label: string; binance: string }[] = [
   { key: '1m', label: '1m', binance: '1m' },

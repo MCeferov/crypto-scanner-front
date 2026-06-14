@@ -3,10 +3,12 @@ import { Link } from 'wouter';
 import { Header } from '../components/Layout/Header';
 import { MarketSummary } from '../components/Dashboard/MarketSummary';
 import { useAuth } from '../context/AuthContext';
+import { useT } from '../context/LocaleContext';
 import { Button } from '../components/ui/button';
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const t = useT();
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -14,10 +16,10 @@ export function DashboardPage() {
       <div className="px-4 py-6 max-w-[1920px] mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
-            Dashboard
+            {t('dashboard.title')}
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-            Welcome back, <span className="font-semibold" style={{ color: '#f0b90b' }}>{user?.username}</span>
+            {t('dashboard.welcome', { username: user?.username ?? '' })}
           </p>
         </div>
 
@@ -28,13 +30,13 @@ export function DashboardPage() {
           style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
         >
           <div>
-            <h2 className="font-semibold text-base" style={{ color: 'var(--text)' }}>Crypto Heatmap</h2>
+            <h2 className="font-semibold text-base" style={{ color: 'var(--text)' }}>{t('dashboard.heatmapTitle')}</h2>
             <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-              Real-time RSI, MACD, SuperTrend and AI signals for top pairs
+              {t('dashboard.heatmapDesc')}
             </p>
           </div>
           <Link href="/">
-            <Button>Open Heatmap →</Button>
+            <Button>{t('dashboard.openHeatmap')}</Button>
           </Link>
         </div>
       </div>

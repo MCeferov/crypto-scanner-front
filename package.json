@@ -76,6 +76,7 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "3.13.12",
+    "@workspace/i18n": "workspace:*",
     "lightweight-charts": "5.0.8"
   }
 }

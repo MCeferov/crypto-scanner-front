@@ -50,6 +50,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      "@workspace/i18n": path.resolve(import.meta.dirname, "..", "..", "lib", "i18n", "src", "index.ts"),
     },
     dedupe: ["react", "react-dom"],
   },
@@ -70,6 +71,14 @@ export default defineConfig({
       "/api": {
         target: process.env.API_PROXY_TARGET ?? "http://localhost:8080",
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes, req) => {
+            if (req.url?.includes("/klines/stream")) {
+              proxyRes.headers["cache-control"] = "no-cache";
+              proxyRes.headers["x-accel-buffering"] = "no";
+            }
+          });
+        },
       },
       "/binance-api": {
         target: "https://api.binance.com",

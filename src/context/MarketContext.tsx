@@ -1,5 +1,20 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { getTopUSDTPairs, batchFetchKlinesStaged, hasMinimumKlineData, hasPartialKlineData, type Ticker24h, type Kline, BinanceBanError } from '../services/binanceApi';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, startTransition } from 'react';
+import { BinanceBanError, isBinanceBanned } from '../services/binanceRateLimiter';
+import {
+  getTopUSDTPairs,
+  batchFetchKlinesIncremental,
+  EXTRA_TIMEFRAMES,
+  hasMinimumKlineData, hasPartialKlineData, type Ticker24h, type Kline,
+} from '../services/binanceApi';
+import { getAllMarkets, getCryptoMarkets, toTickerFormat } from '../services/marketApi';
+import {
+  createAssetFromNormalized, sortByPopularity, matchesSearch,
+  hasIndicatorSupport, isCryptoAsset,
+} from '../utils/assetHelpers';
+import type { AssetCategory } from '../types/asset';
+import { assetMatchesCategory } from '../types/asset';
+import { readKlineCache, writeKlineCache } from '../services/klineCache';
+import { streamKlinesFromServer, batchKlinesFromServer, toKlineAssetRef } from '../services/klineBatchApi';
 import { BinanceWebSocket, type TickerUpdate } from '../websocket/BinanceWebSocket';
 import { getLatestRSI } from '../indicators/rsi';
 import { getLatestMACD } from '../indicators/macd';
@@ -15,11 +30,13 @@ import { type SetupSignal } from '../indicators/setupSignal';
 import type { ReversalRisk, MtfAlignment } from '../indicators/reversalRisk';
 import { computeMultiTimeframeAnalysis, getPrimaryAnalysisTf, MTF_TIMEFRAMES, type ChartSignal, type MtfTf, type TfDir } from '../indicators/chartAnalysis';
 import { computeSignalAges } from '../indicators/signalAge';
-import { enrichCoinsWithResearch, type ResearchSignal } from '../indicators/marketResearch';
+import { enrichCoinsWithResearch, enrichCoinWithResearch, buildMarketContext, type ResearchSignal } from '../indicators/marketResearch';
 import { fetchFearGreedIndex, type FearGreedData } from '../services/fearGreedApi';
 
+import type { AssetType } from '../types/asset';
+
 export type SortKey =
-  | 'symbol' | 'price' | 'change1h' | 'change24h' | 'volume'
+  | 'symbol' | 'price' | 'change1h' | 'change24h' | 'volume' | 'marketCap'
   | 'rsi15m' | 'rsi1h' | 'rsi4h' | 'rsi1d'
   | 'trendScore' | 'signal' | 'macd' | 'superTrend'
   | 'zoneSignal' | 'zoneBreakout' | 'haSignal' | 'setup' | 'chartSignal' | 'research'
@@ -55,6 +72,11 @@ export const ANALYSIS_TF_LABELS: Record<AnalysisTf, string> = {
 };
 
 export interface CoinData {
+  id: string;
+  name: string;
+  type: AssetType;
+  marketCap: number | null;
+  source?: string;
   symbol: string;
   baseAsset: string;
   price: number;
@@ -139,6 +161,9 @@ export interface CoinData {
 interface MarketContextType {
   coins: CoinData[];
   filteredCoins: CoinData[];
+  assetCategory: AssetCategory;
+  setAssetCategory: (cat: AssetCategory) => void;
+  showIndicatorColumns: boolean;
   loading: boolean;
   error: string | null;
   wsConnected: boolean;
@@ -309,6 +334,56 @@ function computeIndicators(
   };
 }
 
+const INDICATOR_FILTERS: FilterKey[] = [
+  'oversold', 'overbought', 'strongBuy', 'strongSell',
+  'zoneBuy', 'zoneSell', 'zoneBreakLong', 'zoneBreakShort',
+  'haBuy', 'haSell', 'setupBuy', 'setupSell', 'setupStrongBuy', 'setupStrongSell',
+  'chartBuy', 'chartSell', 'researchBuy', 'researchSell',
+  'candlesMature', 'candlesFresh', 'syncStrong',
+];
+
+function buildEmptyCoinFields(): Omit<CoinData, keyof ReturnType<typeof createAssetFromNormalized>> {
+  return {
+    rsi15m: null, rsi1h: null, rsi4h: null, rsi1d: null,
+    macd: null, macdSignal: null, macdHistogram: null,
+    bbUpper: null, bbMiddle: null, bbLower: null, bbPercent: null,
+    atr: null, atrPercent: null,
+    stochRsiK: null, stochRsiD: null,
+    superTrend: null, superTrendValue: null,
+    trendScore: 50, signal: 'NEUTRAL', signalReasons: [],
+    zonePosition: null, zoneSignal: 'ZONE_NEUTRAL', zoneBreakoutSignal: 'NEUTRAL',
+    zoneBreakoutReasons: [], zoneSignalReasons: [],
+    stopLoss: null, takeProfit: null, riskReward: null,
+    haTrend: 0, haConsecutive: 0, haSignal: 'NEUTRAL', haReasons: [],
+    setupSignal: 'NEUTRAL', setupLabel: '—', setupReasons: [], setupConviction: 0,
+    mtf15m: 'NEUTRAL', mtf30m: 'NEUTRAL', mtf1h: 'NEUTRAL', mtf4h: 'NEUTRAL',
+    chartSignal: 'NEUTRAL', chartSignalReasons: [],
+    researchSignal: 'NEUTRAL', researchLabel: '—', researchScore: 0, researchReasons: [],
+    reversalRisk: 'NONE', reversalReasons: [], mtfAlignment: 'MIXED', riskRewardNote: '',
+    primaryAnalysisTf: '1h',
+    mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
+    macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
+    chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
+    syncStatus: 'WEAK', syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [],
+    indicatorsLoaded: false,
+  };
+}
+
+function buildCoinFromTicker(t: Ticker24h): CoinData {
+  const base = createAssetFromNormalized({
+    symbol: t.symbol.replace('USDT', ''),
+    name: t.symbol.replace('USDT', ''),
+    price: parseFloat(t.lastPrice),
+    change24h: parseFloat(t.priceChangePercent),
+    marketCap: null,
+    volume24h: parseFloat(t.quoteVolume),
+    source: 'binance',
+    assetClass: 'crypto',
+    lastUpdated: new Date().toISOString(),
+  });
+  return { ...base, ...buildEmptyCoinFields() };
+}
+
 export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [coins, setCoins]                 = useState<CoinData[]>([]);
   const [loading, setLoading]             = useState(true);
@@ -319,6 +394,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [sortKey, setSortKey]             = useState<SortKey>('trendScore');
   const [sortDir, setSortDir]             = useState<'asc' | 'desc'>('desc');
   const [filter, setFilter]               = useState<FilterKey>('all');
+  const [assetCategory, setAssetCategory] = useState<AssetCategory>('all');
   const [searchQuery, setSearchQuery]     = useState('');
   const [visibleRsiCols, setVisibleRsiCols] = useState<RsiTf[]>(['15m']);
   const [visibleExtraCols, setVisibleExtraCols] = useState<ExtraCol[]>([]);
@@ -363,7 +439,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const recomputeFromCache = useCallback((activeTfs: MtfTf[]) => {
     setCoins(prev => enrichCoinsWithResearch(
       prev.map(coin => {
-        const klines = klineCacheRef.current.get(coin.symbol);
+        const klines = klineCacheRef.current.get(coin.id);
         if (!klines) return coin;
         return { ...coin, ...computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h, activeTfs) };
       }),
@@ -389,16 +465,16 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
 
   const handleWSMessage = useCallback((updates: TickerUpdate[]) => {
     setCoins(prev => {
-      const map = new Map(prev.map(c => [c.symbol, c]));
+      const map = new Map(prev.map(c => [c.id, c]));
       let changed = false;
       for (const upd of updates) {
-        const existing = map.get(upd.symbol);
+        const existing = prev.find(c => c.symbol === upd.symbol && isCryptoAsset(c));
         if (!existing) continue;
         const newPrice    = parseFloat(upd.close);
         const newChange24h = parseFloat(upd.changePercent);
         const newVolume   = parseFloat(upd.quoteVolume);
         if (Math.abs(newPrice - existing.price) < 1e-12) continue;
-        map.set(upd.symbol, {
+        map.set(existing.id, {
           ...existing,
           price: newPrice,
           priceChange24h: newChange24h,
@@ -407,11 +483,11 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
           flashDown: newPrice < existing.price,
         });
         changed = true;
-        const key = upd.symbol;
+        const key = existing.id;
         const t = flashTimersRef.current.get(key);
         if (t) clearTimeout(t);
         flashTimersRef.current.set(key, setTimeout(() => {
-          setCoins(p => p.map(c => c.symbol === key ? { ...c, flashUp: false, flashDown: false } : c));
+          setCoins(p => p.map(c => c.id === key ? { ...c, flashUp: false, flashDown: false } : c));
           flashTimersRef.current.delete(key);
         }, 800));
       }
@@ -429,65 +505,200 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setLoadingProgress(0);
     try {
-      const [tickers, fearGreed] = await Promise.all([
-        getTopUSDTPairs(50),
-        fetchFearGreedIndex(),
-      ]);
+      const fearGreed = await fetchFearGreedIndex();
       fearGreedRef.current = fearGreed;
-      setLoadingProgress(5);
+      setLoadingProgress(3);
 
-      const initialCoins: CoinData[] = tickers.map((t: Ticker24h) => ({
-        symbol: t.symbol,
-        baseAsset: t.symbol.replace('USDT', ''),
-        price: parseFloat(t.lastPrice),
-        priceChange1h: 0,
-        priceChange24h: parseFloat(t.priceChangePercent),
-        volume24h: parseFloat(t.quoteVolume),
-        rsi15m: null, rsi1h: null, rsi4h: null, rsi1d: null,
-        macd: null, macdSignal: null, macdHistogram: null,
-        bbUpper: null, bbMiddle: null, bbLower: null, bbPercent: null,
-        atr: null, atrPercent: null,
-        stochRsiK: null, stochRsiD: null,
-        superTrend: null, superTrendValue: null,
-        trendScore: 50, signal: 'NEUTRAL', signalReasons: [],
-        zonePosition: null, zoneSignal: 'ZONE_NEUTRAL', zoneBreakoutSignal: 'NEUTRAL',
-        zoneBreakoutReasons: [], zoneSignalReasons: [],
-        stopLoss: null, takeProfit: null, riskReward: null,
-        haTrend: 0, haConsecutive: 0, haSignal: 'NEUTRAL', haReasons: [],
-        setupSignal: 'NEUTRAL', setupLabel: '—', setupReasons: [], setupConviction: 0,
-        mtf15m: 'NEUTRAL', mtf30m: 'NEUTRAL', mtf1h: 'NEUTRAL', mtf4h: 'NEUTRAL',
-        chartSignal: 'NEUTRAL', chartSignalReasons: [],
-        researchSignal: 'NEUTRAL', researchLabel: '—', researchScore: 0, researchReasons: [],
-        reversalRisk: 'NONE', reversalReasons: [], mtfAlignment: 'MIXED', riskRewardNote: '',
-        primaryAnalysisTf: '1h',
-        mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
-        macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
-        chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
-    syncStatus: 'WEAK' as const, syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [],
-        indicatorsLoaded: false,
-      }));
+      let initialCoins: CoinData[] = [];
+      try {
+        const allMarkets = await getAllMarkets();
+        const merged = [
+          ...allMarkets.crypto,
+          ...allMarkets.stocks,
+          ...allMarkets.forex,
+          ...allMarkets.commodities,
+        ];
+        if (merged.length > 0) {
+          const cryptoTop = [...allMarkets.crypto]
+            .sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0))
+            .slice(0, 40);
+          const combined = [
+            ...cryptoTop,
+            ...allMarkets.stocks,
+            ...allMarkets.forex,
+            ...allMarkets.commodities,
+          ];
+          initialCoins = sortByPopularity(
+            combined.map(a => ({ ...createAssetFromNormalized(a), ...buildEmptyCoinFields() })),
+          );
+          console.info(`[market] loaded ${initialCoins.length} assets`, allMarkets.sources);
+        }
+      } catch {
+        /* fallback below */
+      }
+
+      if (initialCoins.length === 0) {
+        try {
+          const marketRes = await getCryptoMarkets();
+          if (marketRes.data.length > 0) {
+            initialCoins = sortByPopularity(
+              marketRes.data.map(a => ({ ...createAssetFromNormalized(a), ...buildEmptyCoinFields() })),
+            );
+          } else {
+            const tickers = await getTopUSDTPairs(50);
+            initialCoins = tickers.map(buildCoinFromTicker);
+          }
+        } catch {
+          const tickers = await getTopUSDTPairs(50);
+          initialCoins = tickers.map(buildCoinFromTicker);
+        }
+      }
+
       setCoins(initialCoins);
       setLoading(false);
 
-      const symbols = initialCoins.map(c => c.symbol);
-      const total   = symbols.length;
+      const indicatorAssets = initialCoins.filter(hasIndicatorSupport);
+      const assetRefs = indicatorAssets.map(toKlineAssetRef);
+      if (assetRefs.length === 0) {
+        setLoadingProgress(100);
+        return;
+      }
 
-      const klineMap = await batchFetchKlinesStaged(symbols, (done, batchTotal) => {
-        setLoadingProgress(5 + Math.round((done / batchTotal) * 90));
-      }, 25);
+      const researchCtxRef = { current: buildMarketContext(undefined, fearGreedRef.current) };
 
-      klineMap.forEach((v, k) => klineCacheRef.current.set(k, v));
+      const applyAssetKlines = (assetId: string, klines: Record<string, Kline[]>) => {
+        klineCacheRef.current.set(assetId, {
+          ...(klineCacheRef.current.get(assetId) ?? {}),
+          ...klines,
+        });
+        const merged = klineCacheRef.current.get(assetId);
+        if (!merged || (!hasMinimumKlineData(merged) && !hasPartialKlineData(merged))) return;
 
-      setCoins(prev => enrichCoinsWithResearch(
-        prev.map(coin => {
-          const klines = klineMap.get(coin.symbol);
-          if (!klines) return { ...coin, indicatorsLoaded: true };
-          return { ...coin, ...computeIndicators(coin.symbol, klines, coin.price, coin.priceChange24h, activeTfsRef.current) };
-        }),
-        fearGreedRef.current,
-        activeTfsRef.current,
-        klineCacheRef.current,
-      ));
+        startTransition(() => {
+          setCoins(prev => {
+            const next = prev.map(coin => {
+              if (coin.id !== assetId || !hasIndicatorSupport(coin)) return coin;
+              const updated = {
+                ...coin,
+                ...computeIndicators(coin.symbol, merged, coin.price, coin.priceChange24h, activeTfsRef.current),
+              };
+              return enrichCoinWithResearch(
+                updated,
+                researchCtxRef.current,
+                activeTfsRef.current,
+                merged,
+              );
+            });
+            const btc = next.find(c => c.symbol === 'BTCUSDT');
+            researchCtxRef.current = buildMarketContext(btc, fearGreedRef.current);
+            return next;
+          });
+        });
+      };
+
+      const finalizeResearch = () => {
+        setCoins(prev => enrichCoinsWithResearch(
+          prev,
+          fearGreedRef.current,
+          activeTfsRef.current,
+          klineCacheRef.current,
+        ));
+      };
+
+      const cacheIds = assetRefs.map(a => a.id);
+      const cached = readKlineCache(cacheIds);
+      if (cached.size > 0) {
+        cached.forEach((klines, id) => klineCacheRef.current.set(id, klines));
+        startTransition(() => {
+          setCoins(prev => {
+            const next = prev.map(coin => {
+              if (!hasIndicatorSupport(coin)) return coin;
+              const merged = klineCacheRef.current.get(coin.id);
+              if (!merged || (!hasMinimumKlineData(merged) && !hasPartialKlineData(merged))) {
+                return coin;
+              }
+              const updated = {
+                ...coin,
+                ...computeIndicators(coin.symbol, merged, coin.price, coin.priceChange24h, activeTfsRef.current),
+              };
+              return enrichCoinWithResearch(
+                updated,
+                researchCtxRef.current,
+                activeTfsRef.current,
+                merged,
+              );
+            });
+            const btc = next.find(c => c.symbol === 'BTCUSDT');
+            researchCtxRef.current = buildMarketContext(btc, fearGreedRef.current);
+            return next;
+          });
+        });
+        setLoadingProgress(Math.min(90, 5 + Math.round((cached.size / assetRefs.length) * 85)));
+      }
+
+      const loadKlines = async (
+        intervals: readonly string[],
+        onProgress?: (done: number, total: number) => void,
+      ) => {
+        const apply = (id: string, klines: Record<string, Kline[]>, done: number, total: number) => {
+          applyAssetKlines(id, klines);
+          onProgress?.(done, total);
+        };
+
+        try {
+          await streamKlinesFromServer(assetRefs, intervals, apply);
+          return;
+        } catch { /* SSE failed */ }
+
+        try {
+          const map = await batchKlinesFromServer(assetRefs, intervals);
+          let done = 0;
+          map.forEach((klines, id) => {
+            done++;
+            apply(id, klines, done, assetRefs.length);
+          });
+        } catch (batchErr) {
+          console.warn('[market] server kline batch failed, falling back', batchErr);
+          const cryptoRefs = assetRefs.filter(a => a.type === 'crypto');
+          const nonCryptoRefs = assetRefs.filter(a => a.type !== 'crypto');
+
+          if (cryptoRefs.length > 0) {
+            await batchFetchKlinesIncremental(cryptoRefs.map(a => a.symbol), {
+              concurrency: 4,
+              timeframes: intervals,
+              onSymbol: (sym, klines, done, total) => {
+                const ref = cryptoRefs.find(a => a.symbol === sym);
+                if (ref) apply(ref.id, klines, done, total);
+              },
+            });
+          }
+
+          if (nonCryptoRefs.length > 0) {
+            try {
+              const map = await batchKlinesFromServer(nonCryptoRefs, intervals);
+              let done = 0;
+              map.forEach((klines, id) => {
+                done++;
+                apply(id, klines, done, nonCryptoRefs.length);
+              });
+            } catch (nonCryptoErr) {
+              console.error('[market] non-crypto klines failed — restart API: pnpm dev:api', nonCryptoErr);
+            }
+          }
+        }
+      };
+
+      await loadKlines(['15m', '1h', '4h'], (done, total) => {
+        setLoadingProgress(5 + Math.round((done / total) * 90));
+      });
+
+      finalizeResearch();
+      writeKlineCache(klineCacheRef.current);
+      setLoadingProgress(95);
+
+      if (!isBinanceBanned()) {
+        loadKlines(EXTRA_TIMEFRAMES).then(() => writeKlineCache(klineCacheRef.current)).catch(() => {});
+      }
 
       setLoadingProgress(100);
 
@@ -520,23 +731,30 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const showIndicatorColumns = true;
+
   const filteredCoins = useMemo(() => {
     let result = [...coins];
 
+    result = result.filter(c => assetMatchesCategory(c.type, assetCategory));
+
     if (searchQuery) {
-      const q = searchQuery.toUpperCase();
-      result = result.filter(c => c.baseAsset.includes(q) || c.symbol.includes(q));
+      result = result.filter(c => matchesSearch(c, searchQuery));
     }
+
+    const indicatorOnly = INDICATOR_FILTERS.includes(filter);
 
     switch (filter) {
       case 'oversold':
         result = result.filter(c => {
+          if (!hasIndicatorSupport(c)) return !indicatorOnly;
           const v = c.rsi15m ?? c.rsi1h;
           return v !== null && v < 30;
         });
         break;
       case 'overbought':
         result = result.filter(c => {
+          if (!hasIndicatorSupport(c)) return !indicatorOnly;
           const v = c.rsi15m ?? c.rsi1h;
           return v !== null && v > 70;
         });
@@ -551,10 +769,10 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         result = result.filter(c => c.priceChange24h < 0).sort((a, b) => a.priceChange24h - b.priceChange24h).slice(0, 30);
         break;
       case 'strongBuy':
-        result = result.filter(c => c.signal === 'STRONG_BUY' || c.signal === 'BUY');
+        result = result.filter(c => hasIndicatorSupport(c) && (c.signal === 'STRONG_BUY' || c.signal === 'BUY'));
         break;
       case 'strongSell':
-        result = result.filter(c => c.signal === 'STRONG_SELL' || c.signal === 'SELL');
+        result = result.filter(c => hasIndicatorSupport(c) && (c.signal === 'STRONG_SELL' || c.signal === 'SELL'));
         break;
       case 'zoneBuy':
         result = result.filter(c => c.zoneSignal === 'ZONE_STRONG_BUY' || c.zoneSignal === 'ZONE_BUY');
@@ -622,6 +840,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         case 'price':      av = a.price;        bv = b.price;        break;
         case 'change1h':   av = a.priceChange1h; bv = b.priceChange1h; break;
         case 'change24h':  av = a.priceChange24h; bv = b.priceChange24h; break;
+        case 'marketCap':  av = a.marketCap ?? -1; bv = b.marketCap ?? -1; break;
         case 'volume':     av = a.volume24h;    bv = b.volume24h;    break;
         case 'rsi15m':     av = a.rsi15m ?? -1; bv = b.rsi15m ?? -1; break;
         case 'rsi1h':      av = a.rsi1h  ?? -1; bv = b.rsi1h  ?? -1; break;
@@ -674,11 +893,12 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     });
 
     return result;
-  }, [coins, searchQuery, filter, sortKey, sortDir]);
+  }, [coins, searchQuery, filter, sortKey, sortDir, assetCategory]);
 
   return (
     <MarketContext.Provider value={{
-      coins, filteredCoins, loading, error, wsConnected, wsReconnecting,
+      coins, filteredCoins, assetCategory, setAssetCategory, showIndicatorColumns,
+      loading, error, wsConnected, wsReconnecting,
       loadingProgress, sortKey, sortDir, filter, searchQuery, visibleRsiCols, visibleExtraCols,
       visibleOptionalFilters, visibleAnalysisTfs,
       setSortKey, setSortDir, setFilter, setSearchQuery,

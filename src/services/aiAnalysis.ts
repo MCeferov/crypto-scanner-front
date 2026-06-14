@@ -171,6 +171,7 @@ export function analyzeFromKlines(klines: Kline[], price: number, change24h: num
   });
 
   const coin: CoinData = {
+    id: 'crypto:ANALYSIS', name: 'Analysis', type: 'crypto', marketCap: null,
     symbol: '', baseAsset: '', price, priceChange1h: 0, priceChange24h: change24h,
     volume24h: 0, rsi15m: null, rsi1h, rsi4h: null, rsi1d: null,
     macd: macd?.macd ?? null, macdSignal: macd?.signal ?? null, macdHistogram: macd?.histogram ?? null,

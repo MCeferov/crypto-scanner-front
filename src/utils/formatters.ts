@@ -10,7 +10,21 @@ export function formatVolume(volume: number): string {
   if (volume >= 1_000_000_000) return `$${(volume / 1_000_000_000).toFixed(2)}B`;
   if (volume >= 1_000_000) return `$${(volume / 1_000_000).toFixed(1)}M`;
   if (volume >= 1_000) return `$${(volume / 1_000).toFixed(1)}K`;
+  if (volume <= 0) return '—';
   return `$${volume.toFixed(0)}`;
+}
+
+export function formatMarketCap(cap: number | null): string {
+  if (cap === null || cap <= 0) return '—';
+  if (cap >= 1_000_000_000_000) return `$${(cap / 1_000_000_000_000).toFixed(2)}T`;
+  if (cap >= 1_000_000_000) return `$${(cap / 1_000_000_000).toFixed(2)}B`;
+  if (cap >= 1_000_000) return `$${(cap / 1_000_000).toFixed(1)}M`;
+  return `$${cap.toFixed(0)}`;
+}
+
+export function formatAssetPrice(price: number, type?: string): string {
+  if (type === 'forex') return formatPrice(price);
+  return `$${formatPrice(price)}`;
 }
 
 export function formatPercent(value: number, decimals = 2): string {

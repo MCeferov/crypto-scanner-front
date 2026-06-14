@@ -2,9 +2,10 @@ import React, { useCallback, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   useMarket, type SortKey, type RsiTf, type ExtraCol, type AnalysisTf,
-  ALL_RSI_TFS, RSI_TF_SORT, ALL_EXTRA_COLS, EXTRA_COL_LABELS,
+  ALL_RSI_TFS, RSI_TF_SORT, ALL_EXTRA_COLS,
   ALL_ANALYSIS_TFS, ANALYSIS_TF_LABELS,
 } from '../../context/MarketContext';
+import { useT } from '../../context/LocaleContext';
 import { HeatmapRow } from './HeatmapRow';
 
 interface ColDef {
@@ -18,35 +19,6 @@ interface ColDef {
   stickyLeft?: number;
 }
 
-const STATIC_LEFT: ColDef[] = [
-  { id: 'rank',     sk: null,     label: '#',     align: 'center', minWidth: 38,  sticky: true, stickyLeft: 0  },
-  { id: 'asset',    sk: 'symbol', label: 'Asset', align: 'left',   minWidth: 110, sticky: true, stickyLeft: 38 },
-  { id: 'price',    sk: 'price',  label: 'Price', align: 'right',  minWidth: 100 },
-];
-
-const EXTRA_COL_DEFS: Record<ExtraCol, ColDef> = {
-  macd:   { id: 'macd',   sk: 'macd',   label: 'MACD',   sub: 'hist', align: 'center', minWidth: 68 },
-  volume: { id: 'volume', sk: 'volume', label: 'Volume', sub: '24h',  align: 'right',  minWidth: 76 },
-  atr:    { id: 'atr',    sk: null,     label: 'ATR',    sub: '%',    align: 'center', minWidth: 54 },
-  stoch:  { id: 'stoch',  sk: null,     label: 'Stoch',  sub: 'RSI',  align: 'center', minWidth: 62 },
-  st:     { id: 'st',     sk: 'superTrend', label: 'ST', sub: 'trend', align: 'center', minWidth: 58 },
-  bb:     { id: 'bb',     sk: null,     label: 'BB',     sub: '%B',   align: 'center', minWidth: 52 },
-};
-
-const CORE_RIGHT: ColDef[] = [
-  { id: 'trend',    sk: 'trendScore', label: 'Trend', sub: 'Score', align: 'center', minWidth: 80 },
-  { id: 'mtf',      sk: null,         label: 'TF',    sub: '15·30·1H·4H', align: 'center', minWidth: 108 },
-  { id: 'chartSig', sk: 'chartSignal', label: 'Chart', sub: 'Signal', align: 'center', minWidth: 64 },
-  { id: 'research', sk: 'research', label: 'Bazar', sub: 'Araşdırma', align: 'center', minWidth: 72 },
-  { id: 'ha',       sk: 'haSignal',   label: 'HA',    sub: '15m',   align: 'center', minWidth: 44 },
-  { id: 'zone',     sk: null,         label: 'Zone',  sub: 'S/D',   align: 'center', minWidth: 44 },
-  { id: 'break',    sk: 'zoneBreakout', label: 'Break', sub: 'Dir', align: 'center', minWidth: 68 },
-  { id: 'sl',       sk: 'stopLoss',   label: 'SL',    align: 'right',  minWidth: 72 },
-  { id: 'tp',       sk: 'takeProfit', label: 'TP',    align: 'right',  minWidth: 72 },
-  { id: 'rr',       sk: 'riskReward', label: 'R:R',   align: 'center', minWidth: 44 },
-  { id: 'setup',    sk: 'setup',      label: 'Setup', sub: 'Yekun', align: 'center', minWidth: 88 },
-];
-
 const RSI_TF_LABELS: Record<RsiTf, string> = { '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' };
 const ROW_HEIGHT = 44;
 
@@ -59,9 +31,54 @@ export function HeatmapTable() {
   const {
     filteredCoins, loading, sortKey, sortDir, handleSort,
     visibleRsiCols, toggleRsiCol, visibleExtraCols, toggleExtraCol,
-    visibleAnalysisTfs, toggleAnalysisTf,
+    visibleAnalysisTfs, toggleAnalysisTf, showIndicatorColumns,
   } = useMarket();
+  const t = useT();
   const parentRef = useRef<HTMLDivElement>(null);
+
+  const staticLeft: ColDef[] = useMemo(() => [
+    { id: 'rank', sk: null, label: t('table.rank'), align: 'center', minWidth: 38, sticky: true, stickyLeft: 0 },
+    { id: 'asset', sk: 'symbol', label: t('table.asset'), align: 'left', minWidth: 150, sticky: true, stickyLeft: 38 },
+    { id: 'price', sk: 'price', label: t('table.price'), align: 'right', minWidth: 100 },
+  ], [t]);
+
+  const quoteCols: ColDef[] = useMemo(() => [
+    { id: 'change', sk: 'change24h', label: t('table.change24h'), sub: '%', align: 'right', minWidth: 72 },
+    { id: 'mcap', sk: 'marketCap', label: t('table.marketCap'), sub: 'MC', align: 'right', minWidth: 80 },
+    { id: 'volume', sk: 'volume', label: t('table.volume'), sub: '24h', align: 'right', minWidth: 76 },
+  ], [t]);
+
+  const extraColDefs: Record<ExtraCol, ColDef> = useMemo(() => ({
+    macd:   { id: 'macd',   sk: 'macd',   label: t('columns.macd'),   sub: t('columns.macdHist'), align: 'center', minWidth: 68 },
+    volume: { id: 'volume', sk: 'volume', label: t('columns.volume'), sub: '24h',  align: 'right',  minWidth: 76 },
+    atr:    { id: 'atr',    sk: null,     label: t('columns.atr'),    sub: '%',    align: 'center', minWidth: 54 },
+    stoch:  { id: 'stoch',  sk: null,     label: t('columns.stoch'),  sub: t('columns.stochRsi'), align: 'center', minWidth: 62 },
+    st:     { id: 'st',     sk: 'superTrend', label: t('columns.st'), sub: t('columns.stTrend'), align: 'center', minWidth: 58 },
+    bb:     { id: 'bb',     sk: null,     label: t('columns.bb'),     sub: t('columns.bbPercent'), align: 'center', minWidth: 52 },
+  }), [t]);
+
+  const coreRightCols: ColDef[] = useMemo(() => [
+    { id: 'trend',    sk: 'trendScore', label: t('columns.trend'),    sub: t('columns.trendScore'), align: 'center', minWidth: 80 },
+    { id: 'mtf',      sk: null,         label: t('columns.mtf'),      sub: t('columns.mtfRange'), align: 'center', minWidth: 108 },
+    { id: 'chartSig', sk: 'chartSignal', label: t('columns.chart'),   sub: t('columns.chartSignal'), align: 'center', minWidth: 64 },
+    { id: 'research', sk: 'research',    label: t('columns.research'), sub: t('columns.researchSub'), align: 'center', minWidth: 72 },
+    { id: 'ha',       sk: 'haSignal',   label: t('columns.ha'),       sub: '15m', align: 'center', minWidth: 44 },
+    { id: 'zone',     sk: null,         label: t('columns.zone'),     sub: t('columns.zoneSub'), align: 'center', minWidth: 44 },
+    { id: 'break',    sk: 'zoneBreakout', label: t('columns.break'),  sub: t('columns.breakDir'), align: 'center', minWidth: 68 },
+    { id: 'sl',       sk: 'stopLoss',   label: t('columns.sl'), align: 'right',  minWidth: 72 },
+    { id: 'tp',       sk: 'takeProfit', label: t('columns.tp'), align: 'right',  minWidth: 72 },
+    { id: 'rr',       sk: 'riskReward', label: t('columns.rr'), align: 'center', minWidth: 44 },
+    { id: 'setup',    sk: 'setup',      label: t('columns.setup'), sub: t('columns.setupFinal'), align: 'center', minWidth: 88 },
+  ], [t]);
+
+  const extraColToggleLabels: Record<ExtraCol, string> = useMemo(() => ({
+    macd: t('columns.macd'),
+    volume: t('columns.extraVol'),
+    atr: t('columns.atr'),
+    stoch: t('columns.stoch'),
+    st: t('columns.st'),
+    bb: t('columns.bb'),
+  }), [t]);
 
   const rowVirtualizer = useVirtualizer({
     count: filteredCoins.length,
@@ -71,19 +88,22 @@ export function HeatmapTable() {
   });
 
   const allCols: ColDef[] = useMemo(() => {
+    if (!showIndicatorColumns) {
+      return [...staticLeft, ...quoteCols];
+    }
     const rsiCols: ColDef[] = visibleRsiCols.map(tf => ({
       id: `rsi-${tf}`,
       sk: RSI_TF_SORT[tf] as SortKey,
-      label: 'RSI',
+      label: t('columns.rsi'),
       sub: RSI_TF_LABELS[tf],
       align: 'center' as const,
       minWidth: 60,
     }));
     const extraCols = ALL_EXTRA_COLS
       .filter(c => visibleExtraCols.includes(c))
-      .map(c => EXTRA_COL_DEFS[c]);
-    return [...STATIC_LEFT, ...rsiCols, ...extraCols, ...CORE_RIGHT];
-  }, [visibleRsiCols, visibleExtraCols]);
+      .map(c => extraColDefs[c]);
+    return [...staticLeft, ...quoteCols.filter(c => c.id !== 'volume'), ...rsiCols, ...extraCols, ...coreRightCols];
+  }, [visibleRsiCols, visibleExtraCols, showIndicatorColumns, staticLeft, quoteCols, extraColDefs, coreRightCols, t]);
 
   const renderHeader = useCallback((col: ColDef) => {
     const isActive = col.sk !== null && sortKey === col.sk;
@@ -119,13 +139,15 @@ export function HeatmapTable() {
     );
   }, [sortKey, sortDir, handleSort]);
 
-  const renderColToggles = () => (
+  const renderColToggles = () => {
+    if (!showIndicatorColumns) return null;
+    return (
     <div
       className="flex items-center gap-3 px-4 py-2 border-b flex-wrap"
       style={{ borderColor: 'var(--border)' }}
     >
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>RSI:</span>
+        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>{t('toolbar.rsi')}</span>
         {ALL_RSI_TFS.map(tf => {
           const on = visibleRsiCols.includes(tf);
           return (
@@ -146,7 +168,7 @@ export function HeatmapTable() {
       </div>
       <div className="w-px h-4" style={{ background: 'var(--border)' }} />
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>Extra:</span>
+        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>{t('toolbar.extra')}</span>
         {ALL_EXTRA_COLS.map(col => {
           const on = visibleExtraCols.includes(col);
           return (
@@ -160,14 +182,14 @@ export function HeatmapTable() {
                 border: `1px solid ${on ? 'var(--border-lite)' : 'var(--border)'}`,
               }}
             >
-              {EXTRA_COL_LABELS[col]}
+              {extraColToggleLabels[col]}
             </button>
           );
         })}
       </div>
       <div className="w-px h-4" style={{ background: 'var(--border)' }} />
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>Analiz TF:</span>
+        <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>{t('toolbar.analysisTf')}</span>
         {ALL_ANALYSIS_TFS.map(tf => {
           const on = visibleAnalysisTfs.includes(tf);
           return (
@@ -187,14 +209,15 @@ export function HeatmapTable() {
         })}
       </div>
     </div>
-  );
+    );
+  };
 
   if (loading && filteredCoins.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3">
         <div className="w-8 h-8 rounded-full border-2 animate-spin"
           style={{ borderColor: 'rgba(240,185,11,.2)', borderTopColor: '#f0b90b' }} />
-        <p className="text-sm" style={{ color: 'var(--dim)' }}>Market data yüklənir…</p>
+        <p className="text-sm" style={{ color: 'var(--dim)' }}>{t('home.loading')}</p>
       </div>
     );
   }
@@ -216,7 +239,7 @@ export function HeatmapTable() {
             {filteredCoins.length === 0 && !loading ? (
               <tr>
                 <td colSpan={allCols.length} className="text-center py-16">
-                  <p className="text-sm" style={{ color: 'var(--dim)' }}>Filtrə uyğun coin tapılmadı</p>
+                  <p className="text-sm" style={{ color: 'var(--dim)' }}>{t('home.noResults')}</p>
                 </td>
               </tr>
             ) : (
@@ -228,7 +251,7 @@ export function HeatmapTable() {
                   const coin = filteredCoins[vRow.index];
                   return (
                     <HeatmapRow
-                      key={coin.symbol}
+                      key={coin.id}
                       coin={coin}
                       rank={vRow.index + 1}
                       visibleRsiCols={visibleRsiCols}

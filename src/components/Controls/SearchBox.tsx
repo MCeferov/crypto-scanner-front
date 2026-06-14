@@ -1,8 +1,10 @@
 import React from 'react';
 import { useMarket } from '../../context/MarketContext';
+import { useT } from '../../context/LocaleContext';
 
 export function SearchBox() {
   const { searchQuery, setSearchQuery } = useMarket();
+  const t = useT();
 
   return (
     <div className="relative">
@@ -13,7 +15,7 @@ export function SearchBox() {
         type="search"
         value={searchQuery}
         onChange={e => setSearchQuery(e.target.value)}
-        placeholder="Search BTC, ETH, SOL..."
+        placeholder={t('search.placeholder')}
         className="pl-8 pr-8 py-2 rounded-lg text-sm w-52 outline-none transition-all"
         style={{
           background: 'var(--surface)',
