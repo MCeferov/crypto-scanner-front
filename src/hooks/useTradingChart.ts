@@ -10,7 +10,7 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts';
 import type { Kline } from '../services/binanceApi';
-import { getChartKlines } from '../services/klineBatchApi';
+import { getChartKlines, INDICATOR_KLINE_LIMIT } from '../services/klineBatchApi';
 import { ChartKlineWebSocket } from '../services/chartWebSocket';
 import {
   CHART_TIMEFRAMES,
@@ -66,7 +66,11 @@ function buildChartOptions(theme: ChartThemeColors) {
 
 const PANE_HEIGHTS = { main: 380, rsi: 100, macd: 100, stoch: 100 };
 
-export function useTradingChart(asset: ChartAsset) {
+export function useTradingChart(
+  asset: ChartAsset,
+  initialTimeframe: ChartTimeframe = '1h',
+  onKlinesLoaded?: (interval: string, klines: Kline[]) => void,
+) {
   const { symbol, type } = asset;
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
@@ -96,7 +100,7 @@ export function useTradingChart(asset: ChartAsset) {
   const klinesRef = useRef<Kline[]>([]);
   const settingsRef = useRef<IndicatorSettings>(DEFAULT_INDICATOR_SETTINGS);
 
-  const [timeframe, setTimeframe] = useState<ChartTimeframe>('1h');
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>(initialTimeframe);
   const [settings, setSettings] = useState<IndicatorSettings>(DEFAULT_INDICATOR_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -208,14 +212,18 @@ export function useTradingChart(asset: ChartAsset) {
     chart.timeScale().fitContent();
   }, [removeSeriesSafe, clearIndicatorPanes, addIndicatorPane]);
 
+  const onKlinesLoadedRef = useRef(onKlinesLoaded);
+  onKlinesLoadedRef.current = onKlinesLoaded;
+
   const loadData = useCallback(async (sym: string, assetType: ChartAsset['type'], tf: ChartTimeframe, s: IndicatorSettings) => {
     setLoading(true);
     setError(null);
     try {
       const interval = getBinanceInterval(tf);
-      const klines = await getChartKlines(assetType, sym, interval, 200);
+      const klines = await getChartKlines(assetType, sym, interval, INDICATOR_KLINE_LIMIT);
       klinesRef.current = klines;
       applySeries(klines, s);
+      onKlinesLoadedRef.current?.(interval, klines);
       setLoading(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load chart data');
@@ -317,7 +325,6 @@ export function useTradingChart(asset: ChartAsset) {
       else if (key === 'superTrend') next.superTrend = { ...prev.superTrend, enabled: !prev.superTrend.enabled };
       else if (key === 'rsi') next.rsi = { ...prev.rsi, enabled: !prev.rsi.enabled };
       else if (key === 'macd') next.macd = { ...prev.macd, enabled: !prev.macd.enabled };
-      else if (key === 'atr') next.atr = { ...prev.atr, enabled: !prev.atr.enabled };
       else if (key === 'stochRsi') next.stochRsi = { ...prev.stochRsi, enabled: !prev.stochRsi.enabled };
       return next;
     });

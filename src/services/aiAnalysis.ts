@@ -9,7 +9,7 @@ import { getLatestATR } from '../indicators/atr';
 import { getLatestStochRSI } from '../indicators/stochRsi';
 import { getLatestSuperTrend } from '../indicators/supertrend';
 import { calculateTrendScore } from '../indicators/trendScore';
-import { analyzeHeikinAshi, heikinAshiToKlines } from '../indicators/heikinAshi';
+import { analyzeHeikinAshi } from '../indicators/heikinAshi';
 
 export interface IndicatorSummaryItem {
   name: string;
@@ -29,8 +29,8 @@ export interface AIAnalysisResult {
 
 function biasFromRSI(rsi: number | null): 'bullish' | 'bearish' | 'neutral' {
   if (rsi === null) return 'neutral';
-  if (rsi < 35) return 'bullish';
-  if (rsi > 65) return 'bearish';
+  if (rsi < 38) return 'bullish';
+  if (rsi > 62) return 'bearish';
   return 'neutral';
 }
 
@@ -86,14 +86,9 @@ export function analyzeFromCoin(coin: CoinData): AIAnalysisResult {
       bias: 'neutral',
     },
     {
-      name: 'ATR %',
-      value: coin.atrPercent !== null ? `${coin.atrPercent.toFixed(2)}%` : '—',
-      bias: coin.atrPercent !== null && coin.atrPercent > 3 ? 'bearish' : 'neutral',
-    },
-    {
       name: 'Stoch RSI',
       value: coin.stochRsiK !== null ? `K ${coin.stochRsiK.toFixed(1)}` : '—',
-      bias: coin.stochRsiK === null ? 'neutral' : coin.stochRsiK < 20 ? 'bullish' : coin.stochRsiK > 80 ? 'bearish' : 'neutral',
+      bias: coin.stochRsiK === null ? 'neutral' : coin.stochRsiK < 15 ? 'bullish' : coin.stochRsiK > 85 ? 'bearish' : 'neutral',
     },
     {
       name: 'SuperTrend',
@@ -103,7 +98,7 @@ export function analyzeFromCoin(coin: CoinData): AIAnalysisResult {
     {
       name: 'Bollinger %B',
       value: coin.bbPercent !== null ? `${(coin.bbPercent * 100).toFixed(0)}%` : '—',
-      bias: coin.bbPercent === null ? 'neutral' : coin.bbPercent < 0.2 ? 'bullish' : coin.bbPercent > 0.8 ? 'bearish' : 'neutral',
+      bias: coin.bbPercent === null ? 'neutral' : coin.bbPercent < 0.15 ? 'bullish' : coin.bbPercent > 0.85 ? 'bearish' : 'neutral',
     },
     {
       name: 'S/D Zone',
@@ -152,15 +147,15 @@ export function analyzeFromCoin(coin: CoinData): AIAnalysisResult {
 }
 
 export function analyzeFromKlines(klines: Kline[], price: number, change24h: number): AIAnalysisResult {
-  const klinesHa = heikinAshiToKlines(klines);
-  const closesHa = klinesHa.map(k => k.close);
-  const rsi1h = getLatestRSI(closesHa, 14);
-  const macd = getLatestMACD(closesHa);
-  const bb = getLatestBB(closesHa);
+  // XAM (raw) qiymət bazisi — detail qrafiki ilə eyni, indikatorlar arası sinxron
+  const closes = klines.map(k => k.close);
+  const rsi1h = getLatestRSI(closes, 14);
+  const macd = getLatestMACD(closes);
+  const bb = getLatestBB(closes);
   const atr = getLatestATR(klines, 14);
   const atrPercent = atr !== null && price > 0 ? (atr / price) * 100 : null;
-  const stoch = getLatestStochRSI(closesHa);
-  const st = getLatestSuperTrend(klinesHa);
+  const stoch = getLatestStochRSI(closes);
+  const st = getLatestSuperTrend(klines);
   const haResult = analyzeHeikinAshi(klines);
   const trendScore = calculateTrendScore({
     rsi1h, rsi4h: null, rsi1d: null,
@@ -173,7 +168,8 @@ export function analyzeFromKlines(klines: Kline[], price: number, change24h: num
   const coin: CoinData = {
     id: 'crypto:ANALYSIS', name: 'Analysis', type: 'crypto', marketCap: null,
     symbol: '', baseAsset: '', price, priceChange1h: 0, priceChange24h: change24h,
-    volume24h: 0, rsi15m: null, rsi1h, rsi4h: null, rsi1d: null,
+    volume24h: 0, volBuyRatios: { '15m': null, '1h': null, '4h': null, '1d': null },
+    rsi15m: null, rsi1h, rsi4h: null, rsi1d: null,
     macd: macd?.macd ?? null, macdSignal: macd?.signal ?? null, macdHistogram: macd?.histogram ?? null,
     bbUpper: bb?.upper ?? null, bbMiddle: bb?.middle ?? null, bbLower: bb?.lower ?? null,
     bbPercent: bb?.percentB ?? null, atr, atrPercent,

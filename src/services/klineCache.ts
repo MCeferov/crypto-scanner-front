@@ -1,6 +1,6 @@
 import type { Kline } from './binanceApi';
 
-const CACHE_KEY = 'market:klines:v2';
+const CACHE_KEY = 'market:klines:v4';
 const CACHE_TTL_MS = 5 * 60_000;
 
 interface CacheEntry {

@@ -25,13 +25,14 @@ import { getLatestSuperTrend } from '../indicators/supertrend';
 import { calculateTrendScore } from '../indicators/trendScore';
 import { computeSignal, type Signal } from '../indicators/aiSignal';
 import { analyzeSupplyDemand, type ZoneBreakoutSignal, type ZonePosition, type ZoneSignal } from '../indicators/supplyDemand';
-import { analyzeHeikinAshi, heikinAshiToKlines, type HaSignal } from '../indicators/heikinAshi';
+import { analyzeHeikinAshi, type HaSignal } from '../indicators/heikinAshi';
 import { type SetupSignal } from '../indicators/setupSignal';
 import type { ReversalRisk, MtfAlignment } from '../indicators/reversalRisk';
 import { computeMultiTimeframeAnalysis, getPrimaryAnalysisTf, MTF_TIMEFRAMES, type ChartSignal, type MtfTf, type TfDir } from '../indicators/chartAnalysis';
 import { computeSignalAges } from '../indicators/signalAge';
 import { enrichCoinsWithResearch, enrichCoinWithResearch, buildMarketContext, type ResearchSignal } from '../indicators/marketResearch';
 import { fetchFearGreedIndex, type FearGreedData } from '../services/fearGreedApi';
+import { computeBuyRatios } from '../indicators/volumeConfirmation';
 
 import type { AssetType } from '../types/asset';
 
@@ -53,10 +54,10 @@ export type FilterKey =
   | 'candlesMature' | 'candlesFresh' | 'syncStrong';
 
 /** Optional detail columns — hidden by default to reduce clutter */
-export type ExtraCol = 'macd' | 'volume' | 'atr' | 'stoch' | 'st' | 'bb';
-export const ALL_EXTRA_COLS: ExtraCol[] = ['macd', 'volume', 'atr', 'stoch', 'st', 'bb'];
+export type ExtraCol = 'macd' | 'volume' | 'stoch' | 'st' | 'bb';
+export const ALL_EXTRA_COLS: ExtraCol[] = ['macd', 'volume', 'stoch', 'st', 'bb'];
 export const EXTRA_COL_LABELS: Record<ExtraCol, string> = {
-  macd: 'MACD', volume: 'Vol', atr: 'ATR', stoch: 'Stoch', st: 'ST', bb: 'BB',
+  macd: 'MACD', volume: 'Vol', stoch: 'Stoch', st: 'ST', bb: 'BB',
 };
 
 /** RSI timeframe column visibility */
@@ -83,6 +84,7 @@ export interface CoinData {
   priceChange1h: number;
   priceChange24h: number;
   volume24h: number;
+  volBuyRatios: Record<RsiTf, number | null>;
   rsi15m: number | null;
   rsi1h: number | null;
   rsi4h: number | null;
@@ -188,6 +190,8 @@ interface MarketContextType {
   removeOptionalFilter: (key: FilterKey) => void;
   toggleAnalysisTf: (tf: AnalysisTf) => void;
   refresh: () => void;
+  /** Detail qrafikdən və ya server refresh-dən gələn klines ilə cədvəl indikatorlarını yenilə */
+  syncAssetKlines: (assetId: string, patch: Record<string, Kline[]>) => void;
 }
 
 const MarketContext = createContext<MarketContextType | null>(null);
@@ -206,7 +210,6 @@ function computeIndicators(
   activeTfs: MtfTf[] = [...MTF_TIMEFRAMES],
 ): Partial<CoinData> {
   const k15m = klineMap['15m'] || [];
-  const k30m = klineMap['30m'] || [];
   const k1h = klineMap['1h'] || [];
   const k4h = klineMap['4h'] || [];
   const k1d = klineMap['1d'] || [];
@@ -216,24 +219,22 @@ function computeIndicators(
   const haKlines = activeTfs.includes('15m') && k15m.length >= 20 ? k15m : primaryK;
   const zoneKlines = activeTfs.includes('15m') && k15m.length >= 20 ? k15m : primaryK;
 
-  const k15mHa = heikinAshiToKlines(k15m);
-  const k30mHa = heikinAshiToKlines(k30m);
-  const k1hHa  = heikinAshiToKlines(k1h);
-  const k4hHa  = heikinAshiToKlines(k4h);
-  const k1dHa  = heikinAshiToKlines(k1d);
-  const primaryHa = heikinAshiToKlines(primaryK);
+  // Bütün qoşul indikatorlar XAM (raw) qiymət üzərində — detail qrafiki ilə eyni bazis.
+  // Heikin-Ashi yalnız ayrıca trend filtri kimi (haResult) qalır. Bu, MACD/Stoch/ST/BB-nin
+  // RSI-dən 3–5 şam gecikməsini aradan qaldırır (sinxronizasiya).
+  const primaryCloses = primaryK.map(k => k.close);
 
-  const rsi15m = getLatestRSI(k15mHa.map(k => k.close), 14);
-  const rsi1h  = getLatestRSI(k1hHa.map(k => k.close),  14);
-  const rsi4h  = getLatestRSI(k4hHa.map(k => k.close),  14);
-  const rsi1d  = getLatestRSI(k1dHa.map(k => k.close),  14);
+  const rsi15m = getLatestRSI(k15m.map(k => k.close), 14);
+  const rsi1h  = getLatestRSI(k1h.map(k => k.close),  14);
+  const rsi4h  = getLatestRSI(k4h.map(k => k.close),  14);
+  const rsi1d  = getLatestRSI(k1d.map(k => k.close),  14);
 
-  const macdResult    = getLatestMACD(primaryHa.map(k => k.close));
+  const macdResult    = getLatestMACD(primaryCloses);
   const macd          = macdResult?.macd      ?? null;
   const macdSignal    = macdResult?.signal    ?? null;
   const macdHistogram = macdResult?.histogram ?? null;
 
-  const bbResult = getLatestBB(primaryHa.map(k => k.close));
+  const bbResult = getLatestBB(primaryCloses);
   const bbUpper  = bbResult?.upper    ?? null;
   const bbMiddle = bbResult?.middle   ?? null;
   const bbLower  = bbResult?.lower    ?? null;
@@ -243,11 +244,11 @@ function computeIndicators(
   const atr        = getLatestATR(primaryK, 14);
   const atrPercent = atr !== null && price > 0 ? (atr / price) * 100 : null;
 
-  const stochResult = getLatestStochRSI(primaryHa.map(k => k.close));
+  const stochResult = getLatestStochRSI(primaryCloses);
   const stochRsiK   = stochResult?.k ?? null;
   const stochRsiD   = stochResult?.d ?? null;
 
-  const stResult       = getLatestSuperTrend(primaryHa);
+  const stResult       = getLatestSuperTrend(primaryK);
   const superTrend      = stResult?.trend ?? null;
   const superTrendValue = stResult?.value ?? null;
 
@@ -329,6 +330,7 @@ function computeIndicators(
     chartSignal: mtfResult.chartSignal,
     chartSignalReasons: mtfResult.chartSignalReasons,
     primaryAnalysisTf: primaryTf,
+    volBuyRatios: computeBuyRatios(klineMap),
     ...emptyAges,
     indicatorsLoaded,
   };
@@ -365,6 +367,7 @@ function buildEmptyCoinFields(): Omit<CoinData, keyof ReturnType<typeof createAs
     macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
     chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
     syncStatus: 'WEAK', syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [],
+    volBuyRatios: { '15m': null, '1h': null, '4h': null, '1d': null },
     indicatorsLoaded: false,
   };
 }
@@ -434,7 +437,47 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const fearGreedRef     = useRef<FearGreedData | null>(null);
   const klineCacheRef    = useRef<Map<string, Record<string, Kline[]>>>(new Map());
   const activeTfsRef     = useRef<MtfTf[]>([...ALL_ANALYSIS_TFS]);
+  const coinsRef         = useRef<CoinData[]>([]);
   activeTfsRef.current = visibleAnalysisTfs;
+
+  const syncAssetKlines = useCallback((assetId: string, patch: Record<string, Kline[]>) => {
+    const merged = { ...(klineCacheRef.current.get(assetId) ?? {}), ...patch };
+    klineCacheRef.current.set(assetId, merged);
+
+    startTransition(() => {
+      setCoins(prev => {
+        const next = prev.map(coin => {
+          if (coin.id !== assetId || !hasIndicatorSupport(coin)) return coin;
+          const updated = {
+            ...coin,
+            ...computeIndicators(coin.symbol, merged, coin.price, coin.priceChange24h, activeTfsRef.current),
+          };
+          return enrichCoinWithResearch(
+            updated,
+            buildMarketContext(prev.find(c => c.symbol === 'BTCUSDT'), fearGreedRef.current),
+            activeTfsRef.current,
+            merged,
+          );
+        });
+        return next;
+      });
+    });
+  }, []);
+
+  const refreshNonCryptoKlines = useCallback(async () => {
+    const targets = coinsRef.current.filter(c => c.type !== 'crypto' && hasIndicatorSupport(c));
+    if (!targets.length) return;
+    try {
+      const map = await batchKlinesFromServer(
+        targets.map(toKlineAssetRef),
+        ['15m', '1h', '4h'],
+        true,
+      );
+      map.forEach((klines, id) => syncAssetKlines(id, klines));
+    } catch {
+      /* ignore background refresh errors */
+    }
+  }, [syncAssetKlines]);
 
   const recomputeFromCache = useCallback((activeTfs: MtfTf[]) => {
     setCoins(prev => enrichCoinsWithResearch(
@@ -712,6 +755,15 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    coinsRef.current = coins;
+  }, [coins]);
+
+  useEffect(() => {
+    const timer = setInterval(() => { void refreshNonCryptoKlines(); }, 60_000);
+    return () => clearInterval(timer);
+  }, [refreshNonCryptoKlines]);
+
+  useEffect(() => {
     loadData();
     const ws = new BinanceWebSocket(handleWSMessage, handleWSStatus);
     ws.connect();
@@ -743,19 +795,28 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     }
 
     const indicatorOnly = INDICATOR_FILTERS.includes(filter);
+    const activeRsiTf: RsiTf = visibleRsiCols[0] ?? '1h';
+    const rsiForActiveTf = (c: CoinData): number | null => {
+      switch (activeRsiTf) {
+        case '15m': return c.rsi15m;
+        case '1h':  return c.rsi1h;
+        case '4h':  return c.rsi4h;
+        case '1d':  return c.rsi1d;
+      }
+    };
 
     switch (filter) {
       case 'oversold':
         result = result.filter(c => {
           if (!hasIndicatorSupport(c)) return !indicatorOnly;
-          const v = c.rsi15m ?? c.rsi1h;
+          const v = rsiForActiveTf(c);
           return v !== null && v < 30;
         });
         break;
       case 'overbought':
         result = result.filter(c => {
           if (!hasIndicatorSupport(c)) return !indicatorOnly;
-          const v = c.rsi15m ?? c.rsi1h;
+          const v = rsiForActiveTf(c);
           return v !== null && v > 70;
         });
         break;
@@ -893,7 +954,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     });
 
     return result;
-  }, [coins, searchQuery, filter, sortKey, sortDir, assetCategory]);
+  }, [coins, searchQuery, filter, sortKey, sortDir, assetCategory, visibleRsiCols]);
 
   return (
     <MarketContext.Provider value={{
@@ -903,7 +964,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       visibleOptionalFilters, visibleAnalysisTfs,
       setSortKey, setSortDir, setFilter, setSearchQuery,
       handleSort, toggleRsiCol, toggleExtraCol, addOptionalFilter, removeOptionalFilter,
-      toggleAnalysisTf, refresh: loadData,
+      toggleAnalysisTf, refresh: loadData, syncAssetKlines,
     }}>
       {children}
     </MarketContext.Provider>

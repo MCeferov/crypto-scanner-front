@@ -48,14 +48,6 @@ export function HomePage() {
         </div>
       )}
 
-      {!showIndicatorColumns && (
-        <div className="px-4 py-2 flex justify-end border-b" style={{ borderColor: 'var(--border)' }}>
-          <span className="text-[11px] font-mono" style={{ color: 'var(--dim)' }}>
-            {t('home.assetCount', { filtered: filteredCoins.length, total: coins.length })}
-          </span>
-        </div>
-      )}
-
       {error && (
         <div
           className="mx-4 mt-3 px-4 py-2.5 rounded-lg text-sm border"

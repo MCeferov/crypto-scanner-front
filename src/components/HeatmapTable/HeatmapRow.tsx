@@ -1,10 +1,10 @@
-import React, { memo } from 'react';
+import React, { memo, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import type { CoinData, RsiTf, ExtraCol, AnalysisTf } from '../../context/MarketContext';
 import { RSICell } from './RSICell';
 import { CandleAge } from './CandleAge';
 import {
-  formatPrice, formatVolume, formatPercent, formatMarketCap, formatAssetPrice,
+  formatPrice, formatPercent, formatAssetPrice,
   classifySignal, classifyZoneBreakout, classifyHaTrend,
   zoneBreakoutLabel, zonePositionLabel, haTrendLabel,
   mtfDirShort, classifyMtfDir, chartSignalLabel, classifyResearchSignal,
@@ -13,6 +13,7 @@ import { TYPE_COLORS } from '../../types/asset';
 import { isCryptoAsset } from '../../utils/assetHelpers';
 import { useT } from '../../context/LocaleContext';
 import { getTrendScoreColor } from '../../utils/colors';
+import { classifyVolume } from '../../indicators/volumeConfirmation';
 
 const MTF_COLS: { id: string; key: keyof CoinData; ageKey: keyof CoinData; label: string; tf: AnalysisTf }[] = [
   { id: 'mtf15', key: 'mtf15m', ageKey: 'mtf15mCandles', label: '15m', tf: '15m' },
@@ -42,12 +43,74 @@ function SkeletonCell({ w = 40 }: { w?: number }) {
   );
 }
 
-function has(cols: string[], id: string) {
-  return cols.includes(id);
+function VolumeConfirmCell({ colId, coin, loaded, activeRsiTf, t }: {
+  colId: string;
+  coin: CoinData;
+  loaded: boolean;
+  activeRsiTf: RsiTf;
+  t: (key: string) => string;
+}) {
+  if (!loaded) return <SkeletonCell key={colId} w={44} />;
+
+  const rsiValue = coin[RSI_KEY[activeRsiTf]] as number | null;
+  const { status: volumeConfirm, reason: volumeConfirmReason } = classifyVolume(
+    activeRsiTf,
+    rsiValue,
+    coin.volBuyRatios[activeRsiTf],
+  );
+
+  if (volumeConfirm === 'neutral') {
+    return (
+      <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 76 }}>
+        <span
+          className="inline-block rounded px-2 py-0.5 text-[10px] font-semibold"
+          title={volumeConfirmReason}
+          style={{ color: 'var(--muted)', background: 'var(--elevated)', border: '1px solid var(--border)' }}
+        >
+          {t('table.volumeNeutral')}
+        </span>
+      </td>
+    );
+  }
+
+  if (volumeConfirm === 'nodata') {
+    return (
+      <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 76 }}>
+        <span
+          className="inline-block rounded px-2 py-0.5 text-[10px] font-bold"
+          title={volumeConfirmReason}
+          style={{
+            color: '#f0b90b',
+            background: 'rgba(240,185,11,.08)',
+            border: '1px dashed rgba(240,185,11,.45)',
+          }}
+        >
+          {t('table.volumeNoData')}
+        </span>
+      </td>
+    );
+  }
+
+  const real = volumeConfirm === 'real';
+  return (
+    <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 76 }}>
+      <span
+        className="inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap"
+        title={volumeConfirmReason}
+        style={{
+          color: real ? '#26a69a' : '#ef5350',
+          background: real ? 'rgba(38,166,154,.12)' : 'rgba(239,83,80,.12)',
+          border: `1px solid ${real ? 'rgba(38,166,154,.3)' : 'rgba(239,83,80,.3)'}`,
+        }}
+      >
+        {real ? t('table.volumeReal') : t('table.volumeFake')}
+      </span>
+    </td>
+  );
 }
 
 export const HeatmapRow = memo(function HeatmapRow({
-  coin, rank, visibleRsiCols, visibleExtraCols, visibleAnalysisTfs, visibleColIds,
+  coin, rank, visibleAnalysisTfs, visibleColIds,
 }: HeatmapRowProps) {
   const [, setLocation] = useLocation();
   const t = useT();
@@ -56,6 +119,7 @@ export const HeatmapRow = memo(function HeatmapRow({
   const flashClass = coin.flashUp ? 'flash-up' : coin.flashDown ? 'flash-down' : '';
   const loaded = coin.indicatorsLoaded;
   const typeStyle = TYPE_COLORS[coin.type];
+  const activeRsiTf = (visibleColIds.find(id => id.startsWith('rsi-'))?.slice(4) as RsiTf) ?? '1h';
 
   const handleClick = () => {
     if (isCryptoAsset(coin)) {
@@ -80,83 +144,69 @@ export const HeatmapRow = memo(function HeatmapRow({
     coin.riskReward !== null ? `---\n${coin.riskRewardNote}` : '',
   ].filter(Boolean).join('\n');
 
-  return (
-    <tr
-      className={`transition-colors hover:bg-white/[0.04] cursor-pointer ${flashClass}`}
-      style={{ background: rowBg, height: 44 }}
-      onClick={handleClick}
-    >
-      {has(visibleColIds, 'rank') && (
-        <td className="px-2 py-2 text-center sticky left-0 z-10" style={{ background: rowBg, minWidth: 38, width: 38 }}>
-          <span className="text-[11px]" style={{ color: 'var(--dim)' }}>{rank}</span>
-        </td>
-      )}
+  const renderCell = useCallback((colId: string): React.ReactNode => {
+    switch (colId) {
+      case 'rank':
+        return (
+          <td key={colId} className="px-2 py-2 text-center sticky left-0 z-10" style={{ background: rowBg, minWidth: 38, width: 38 }}>
+            <span className="text-[11px]" style={{ color: 'var(--dim)' }}>{rank}</span>
+          </td>
+        );
 
-      {has(visibleColIds, 'asset') && (
-        <td className="px-3 py-2 sticky z-10" style={{ background: rowBg, left: 38, minWidth: 150, width: 150 }}>
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 font-bold text-[9px]"
-              style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}>
-              {coin.baseAsset.slice(0, 3)}
-            </div>
-            <div className="min-w-0">
-              <div className="font-semibold text-xs truncate" style={{ color: 'var(--text)' }}>
-                {coin.baseAsset}
+      case 'asset':
+        return (
+          <td key={colId} className="px-3 py-2 sticky z-10" style={{ background: rowBg, left: 38, minWidth: 150, width: 150 }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 font-bold text-[9px]"
+                style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}>
+                {coin.baseAsset.slice(0, 3)}
               </div>
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-[10px] truncate" style={{ color: 'var(--dim)' }}>{coin.name}</span>
-                <span
-                  className="text-[8px] px-1 py-px rounded font-semibold shrink-0"
-                  style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}
-                >
-                  {t(`assetType.${coin.type}`)}
-                </span>
+              <div className="min-w-0">
+                <div className="font-semibold text-xs truncate" style={{ color: 'var(--text)' }}>
+                  {coin.baseAsset}
+                </div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[10px] truncate" style={{ color: 'var(--dim)' }}>{coin.name}</span>
+                  <span
+                    className="text-[8px] px-1 py-px rounded font-semibold shrink-0"
+                    style={{ background: typeStyle.bg, color: typeStyle.text, border: `1px solid ${typeStyle.border}` }}
+                  >
+                    {t(`assetType.${coin.type}`)}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        </td>
-      )}
+          </td>
+        );
 
-      {has(visibleColIds, 'price') && (
-        <td className="px-3 py-2 text-right" style={{ minWidth: 100 }}>
-          <span className="font-mono font-semibold text-xs" style={{ color: 'var(--text)' }}>
-            {formatAssetPrice(coin.price, coin.type)}
-          </span>
-        </td>
-      )}
+      case 'price':
+        return (
+          <td key={colId} className="px-3 py-2 text-right" style={{ minWidth: 100 }}>
+            <span className="font-mono font-semibold text-xs" style={{ color: 'var(--text)' }}>
+              {formatAssetPrice(coin.price, coin.type)}
+            </span>
+          </td>
+        );
 
-      {has(visibleColIds, 'change') && (
-        <td className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
-          <span
-            className="font-mono text-[11px] font-semibold"
-            style={{ color: coin.priceChange24h > 0 ? '#26a69a' : coin.priceChange24h < 0 ? '#ef5350' : 'var(--muted)' }}
-          >
-            {formatPercent(coin.priceChange24h)}
-          </span>
-        </td>
-      )}
+      case 'change':
+        return (
+          <td key={colId} className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
+            <span
+              className="font-mono text-[11px] font-semibold"
+              style={{ color: coin.priceChange24h > 0 ? '#26a69a' : coin.priceChange24h < 0 ? '#ef5350' : 'var(--muted)' }}
+            >
+              {formatPercent(coin.priceChange24h)}
+            </span>
+          </td>
+        );
 
-      {has(visibleColIds, 'mcap') && (
-        <td className="px-2 py-2 text-right" style={{ minWidth: 80 }}>
-          <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
-            {formatMarketCap(coin.marketCap)}
-          </span>
-        </td>
-      )}
+      case 'volume':
+      case 'vol24h':
+        return <VolumeConfirmCell key={colId} colId={colId} coin={coin} loaded={loaded} activeRsiTf={activeRsiTf} t={t} />;
 
-      {has(visibleColIds, 'volume') && (
-        <td className="px-2 py-2 text-right" style={{ minWidth: 76 }}>
-          <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>{formatVolume(coin.volume24h)}</span>
-        </td>
-      )}
-
-      {visibleRsiCols.map(tf => (
-        <RSICell key={tf} value={coin[RSI_KEY[tf]] as number | null} loaded={loaded} />
-      ))}
-
-      {visibleExtraCols.includes('macd') && (
-        !loaded ? <SkeletonCell w={52} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 68 }}>
+      case 'macd':
+        return !loaded ? <SkeletonCell key={colId} w={52} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 68 }}>
             {coin.macdHistogram !== null ? (
               <span className="font-mono text-[11px]" style={{ color: coin.macdHistogram > 0 ? '#26a69a' : '#ef5350' }}>
                 {coin.macdHistogram > 0 ? '▲' : '▼'} {Math.abs(coin.macdHistogram).toFixed(4)}
@@ -164,40 +214,22 @@ export const HeatmapRow = memo(function HeatmapRow({
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
 
-      {visibleExtraCols.includes('volume') && (
-        <td className="px-2 py-2 text-right" style={{ minWidth: 76 }}>
-          <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>{formatVolume(coin.volume24h)}</span>
-        </td>
-      )}
-
-      {visibleExtraCols.includes('atr') && (
-        !loaded ? <SkeletonCell w={36} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 54 }}>
-            <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
-              {coin.atrPercent !== null ? `${coin.atrPercent.toFixed(2)}%` : '—'}
-            </span>
-          </td>
-        )
-      )}
-
-      {visibleExtraCols.includes('stoch') && (
-        !loaded ? <SkeletonCell w={44} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 62 }}>
+      case 'stoch':
+        return !loaded ? <SkeletonCell key={colId} w={44} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 62 }}>
             {coin.stochRsiK !== null ? (
               <span className="font-mono text-[11px]" style={{
                 color: coin.stochRsiK > 80 ? '#ef5350' : coin.stochRsiK < 20 ? '#26a69a' : 'var(--muted)',
               }}>{coin.stochRsiK.toFixed(1)}<CandleAge candles={coin.stochCandles} /></span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
 
-      {visibleExtraCols.includes('st') && (
-        !loaded ? <SkeletonCell w={40} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 58 }}>
+      case 'st':
+        return !loaded ? <SkeletonCell key={colId} w={40} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 58 }}>
             {coin.superTrend !== null ? (
               <span className="inline-block font-bold rounded px-1.5 py-0.5 text-[10px]"
                 style={{
@@ -207,24 +239,22 @@ export const HeatmapRow = memo(function HeatmapRow({
                 }}>{coin.superTrend === 1 ? '▲' : '▼'}<CandleAge candles={coin.stCandles} /></span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
 
-      {visibleExtraCols.includes('bb') && (
-        !loaded ? <SkeletonCell w={32} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 52 }}>
+      case 'bb':
+        return !loaded ? <SkeletonCell key={colId} w={32} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 52 }}>
             {coin.bbPercent !== null ? (
               <span className="font-mono text-[11px]" style={{
                 color: coin.bbPercent > 0.8 ? '#ef5350' : coin.bbPercent < 0.2 ? '#26a69a' : 'var(--muted)',
               }}>{(coin.bbPercent * 100).toFixed(0)}%</span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'trend') && (
-        !loaded ? <SkeletonCell w={56} /> : (
-          <td className="px-3 py-2" style={{ minWidth: 80 }}>
+      case 'trend':
+        return !loaded ? <SkeletonCell key={colId} w={56} /> : (
+          <td key={colId} className="px-3 py-2" style={{ minWidth: 80 }}>
             <div className="flex items-center gap-2">
               <span className="font-mono font-bold text-[13px]" style={{ color: getTrendScoreColor(coin.trendScore) }}>
                 {coin.trendScore}
@@ -237,12 +267,11 @@ export const HeatmapRow = memo(function HeatmapRow({
               </div>
             </div>
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'mtf') && (
-        !loaded ? <SkeletonCell w={88} /> : (
-          <td className="px-1 py-2 text-center" style={{ minWidth: 108 }}>
+      case 'mtf':
+        return !loaded ? <SkeletonCell key={colId} w={88} /> : (
+          <td key={colId} className="px-1 py-2 text-center" style={{ minWidth: 108 }}>
             <div className="flex items-center justify-center gap-0.5" title={[
               coin.mtfAlignment === 'CONFLICT' ? '⚠ TF ziddiyyəti — flip riski' : '',
               coin.mtfAlignment === 'MIXED' ? 'TF qarışıq' : '',
@@ -264,12 +293,11 @@ export const HeatmapRow = memo(function HeatmapRow({
               })}
             </div>
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'chartSig') && (
-        !loaded ? <SkeletonCell w={44} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 64 }}>
+      case 'chartSig':
+        return !loaded ? <SkeletonCell key={colId} w={44} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 64 }}>
             {coin.chartSignal !== 'NEUTRAL' ? (
               <span
                 className={`inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap ${classifySignal(coin.chartSignal)}`}
@@ -280,12 +308,11 @@ export const HeatmapRow = memo(function HeatmapRow({
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'research') && (
-        !loaded ? <SkeletonCell w={56} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 72 }}>
+      case 'research':
+        return !loaded ? <SkeletonCell key={colId} w={56} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 72 }}>
             {coin.researchSignal !== 'NEUTRAL' ? (
               <span
                 className={`inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap ${classifyResearchSignal(coin.researchSignal)}`}
@@ -296,12 +323,11 @@ export const HeatmapRow = memo(function HeatmapRow({
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'ha') && (
-        !loaded ? <SkeletonCell w={32} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 44 }}>
+      case 'ha':
+        return !loaded ? <SkeletonCell key={colId} w={32} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 44 }}>
             {coin.haTrend !== 0 ? (
               <span
                 className={`inline-block font-bold rounded px-1.5 py-0.5 text-[10px] font-mono ${classifyHaTrend(coin.haTrend)}`}
@@ -312,12 +338,11 @@ export const HeatmapRow = memo(function HeatmapRow({
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'zone') && (
-        !loaded ? <SkeletonCell w={28} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 44 }}>
+      case 'zone':
+        return !loaded ? <SkeletonCell key={colId} w={28} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 44 }}>
             <span className="inline-block font-bold rounded px-1.5 py-0.5 text-[10px]"
               title={coin.zoneSignalReasons.join(' · ') || 'No zone data'}
               style={{
@@ -336,12 +361,11 @@ export const HeatmapRow = memo(function HeatmapRow({
               <CandleAge candles={coin.zoneCandles} />
             </span>
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'break') && (
-        !loaded ? <SkeletonCell w={56} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 68 }}>
+      case 'break':
+        return !loaded ? <SkeletonCell key={colId} w={56} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 68 }}>
             {coin.zoneBreakoutSignal !== 'NEUTRAL' ? (
               <span className={`inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap ${classifyZoneBreakout(coin.zoneBreakoutSignal)}`}
                 title={coin.zoneBreakoutReasons.join(' · ')}>
@@ -350,32 +374,29 @@ export const HeatmapRow = memo(function HeatmapRow({
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'sl') && (
-        !loaded ? <SkeletonCell w={52} /> : (
-          <td className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
+      case 'sl':
+        return !loaded ? <SkeletonCell key={colId} w={52} /> : (
+          <td key={colId} className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
             <span className="font-mono text-[11px]" style={{ color: coin.stopLoss ? '#ef5350' : 'var(--dim)' }}>
               {coin.stopLoss ? `$${formatPrice(coin.stopLoss)}` : '—'}
             </span>
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'tp') && (
-        !loaded ? <SkeletonCell w={52} /> : (
-          <td className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
+      case 'tp':
+        return !loaded ? <SkeletonCell key={colId} w={52} /> : (
+          <td key={colId} className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
             <span className="font-mono text-[11px]" style={{ color: coin.takeProfit ? '#26a69a' : 'var(--dim)' }}>
               {coin.takeProfit ? `$${formatPrice(coin.takeProfit)}` : '—'}
             </span>
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'rr') && (
-        !loaded ? <SkeletonCell w={32} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 44 }}>
+      case 'rr':
+        return !loaded ? <SkeletonCell key={colId} w={32} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 44 }}>
             <span className="font-mono text-[11px]" style={{
               color: coin.riskReward && coin.riskReward >= 2 ? '#26a69a'
                 : coin.riskReward && coin.riskReward >= 1.5 ? '#f0b90b' : 'var(--dim)',
@@ -385,12 +406,11 @@ export const HeatmapRow = memo(function HeatmapRow({
               {coin.riskReward !== null ? `${coin.riskReward.toFixed(1)}` : '—'}
             </span>
           </td>
-        )
-      )}
+        );
 
-      {has(visibleColIds, 'setup') && (
-        !loaded ? <SkeletonCell w={60} /> : (
-          <td className="px-2 py-2 text-center" style={{ minWidth: 88 }}>
+      case 'setup':
+        return !loaded ? <SkeletonCell key={colId} w={60} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 88 }}>
             {coin.setupSignal !== 'NEUTRAL' ? (
               <span
                 className={`inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap ${classifySignal(coin.setupSignal)}`}
@@ -405,14 +425,29 @@ export const HeatmapRow = memo(function HeatmapRow({
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
-        )
-      )}
+        );
+
+      default:
+        if (colId.startsWith('rsi-')) {
+          const tf = colId.slice(4) as RsiTf;
+          return <RSICell key={colId} value={coin[RSI_KEY[tf]] as number | null} loaded={loaded} />;
+        }
+        return null;
+    }
+  }, [coin, loaded, rank, rowBg, setupTooltip, t, typeStyle, visibleAnalysisTfs, activeRsiTf]);
+
+  return (
+    <tr
+      className={`transition-colors hover:bg-white/[0.04] cursor-pointer ${flashClass}`}
+      style={{ background: rowBg, height: 44 }}
+      onClick={handleClick}
+    >
+      {visibleColIds.map(colId => renderCell(colId))}
     </tr>
   );
 }, (prev, next) =>
   prev.coin.price === next.coin.price &&
   prev.coin.priceChange24h === next.coin.priceChange24h &&
-  prev.coin.marketCap === next.coin.marketCap &&
   prev.coin.name === next.coin.name &&
   prev.coin.type === next.coin.type &&
   prev.coin.rsi15m === next.coin.rsi15m &&
@@ -421,6 +456,10 @@ export const HeatmapRow = memo(function HeatmapRow({
   prev.coin.rsi1d === next.coin.rsi1d &&
   prev.coin.macdHistogram === next.coin.macdHistogram &&
   prev.coin.volume24h === next.coin.volume24h &&
+  prev.coin.volBuyRatios['15m'] === next.coin.volBuyRatios['15m'] &&
+  prev.coin.volBuyRatios['1h'] === next.coin.volBuyRatios['1h'] &&
+  prev.coin.volBuyRatios['4h'] === next.coin.volBuyRatios['4h'] &&
+  prev.coin.volBuyRatios['1d'] === next.coin.volBuyRatios['1d'] &&
   prev.coin.atrPercent === next.coin.atrPercent &&
   prev.coin.stochRsiK === next.coin.stochRsiK &&
   prev.coin.bbPercent === next.coin.bbPercent &&

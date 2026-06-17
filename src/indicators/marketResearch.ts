@@ -6,7 +6,6 @@ import { computeReversalRisk, applyReversalPenalty } from './reversalRisk';
 import { computeSignalAges } from './signalAge';
 import { computeSignalSync, applySyncToSetup } from './signalSync';
 import { getPrimaryAnalysisTf, type MtfTf } from './chartAnalysis';
-import { heikinAshiToKlines } from './heikinAshi';
 import type { Kline } from '../services/binanceApi';
 
 export type ResearchSignal = 'BUY' | 'SELL' | 'HOLD' | 'NEUTRAL';
@@ -252,7 +251,7 @@ export function enrichCoinWithResearch(
   const preAges = klines && primaryK.length >= 15
     ? computeSignalAges({
         klineMap: klines,
-        primaryKlinesHa: heikinAshiToKlines(primaryK),
+        primaryKlines: primaryK,
         haKlines: haK,
         chartSignal: withResearch.chartSignal,
         aiSignal: withResearch.signal,
@@ -281,7 +280,7 @@ export function enrichCoinWithResearch(
   const finalAges = preAges && klines
     ? computeSignalAges({
         klineMap: klines,
-        primaryKlinesHa: heikinAshiToKlines(primaryK),
+        primaryKlines: primaryK,
         haKlines: haK,
         chartSignal: withResearch.chartSignal,
         aiSignal: withResearch.signal,

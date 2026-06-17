@@ -20,7 +20,6 @@ const PANEL_INDICATORS: { key: IndicatorKey; panelKey?: 'rsi' | 'macd' | 'stochR
   { key: 'rsi', panelKey: 'rsi', label: 'RSI' },
   { key: 'macd', panelKey: 'macd', label: 'MACD' },
   { key: 'stochRsi', panelKey: 'stochRsi', label: 'Stoch RSI' },
-  { key: 'atr', label: 'ATR' },
 ];
 
 function isEnabled(settings: IndicatorSettings, key: IndicatorKey): boolean {

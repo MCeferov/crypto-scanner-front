@@ -6,7 +6,6 @@ import { calculateMACD } from '../indicators/macd';
 import { calculateBollingerBands } from '../indicators/bollingerBands';
 import { calculateSuperTrend } from '../indicators/supertrend';
 import { calculateStochRSI } from '../indicators/stochRsi';
-import { calculateATR } from '../indicators/atr';
 
 export function toChartTime(openTime: number): UTCTimestamp {
   return Math.floor(openTime / 1000) as UTCTimestamp;
@@ -92,15 +91,6 @@ export function buildStochRSISeries(klines: Kline[], settings: IndicatorSettings
   };
 }
 
-export function buildATRSeries(klines: Kline[], period: number) {
-  const values = calculateATR(klines, period);
-  const offset = klines.length - values.length;
-  return values.map((value, i) => ({
-    time: toChartTime(klines[offset + i].openTime),
-    value,
-  }));
-}
-
 export function computeAllChartSeries(klines: Kline[], settings: IndicatorSettings) {
   return {
     candles: klinesToCandles(klines),
@@ -116,6 +106,5 @@ export function computeAllChartSeries(klines: Kline[], settings: IndicatorSettin
       ? buildSuperTrendSeries(klines, settings.superTrend.period, settings.superTrend.multiplier)
       : [],
     stochRsi: settings.stochRsi.enabled ? buildStochRSISeries(klines, settings.stochRsi) : { k: [], d: [] },
-    atr: settings.atr.enabled ? buildATRSeries(klines, settings.atr.period) : [],
   };
 }

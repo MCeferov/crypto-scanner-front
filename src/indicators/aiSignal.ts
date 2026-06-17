@@ -29,26 +29,27 @@ export function computeSignal(input: SignalInput): SignalResult {
   const macdBearish = input.macdHistogram !== null && input.macdHistogram < 0;
   const haBullish = input.haTrend === 1;
   const haBearish = input.haTrend === -1;
-  const stochOversold = input.stochRsiK !== null && input.stochRsiK < 20;
-  const stochOverbought = input.stochRsiK !== null && input.stochRsiK > 80;
+  // Daha seçici stoch həddi: 15/85 (əvvəl 20/80) — az saxta cross
+  const stochOversold = input.stochRsiK !== null && input.stochRsiK < 15;
+  const stochOverbought = input.stochRsiK !== null && input.stochRsiK > 85;
 
   if (input.rsi1h !== null) {
-    if (input.rsi1h < 30) { bullishCount += 2; reasons.push('HA-RSI 1H oversold'); }
-    else if (input.rsi1h < 40) { bullishCount += 1; reasons.push('HA-RSI 1H low'); }
-    else if (input.rsi1h > 70) { bearishCount += 2; reasons.push('HA-RSI 1H overbought'); }
-    else if (input.rsi1h > 60) { bearishCount += 1; reasons.push('HA-RSI 1H high'); }
+    if (input.rsi1h < 25) { bullishCount += 2; reasons.push('RSI 1H güclü oversold (<25)'); }
+    else if (input.rsi1h < 38) { bullishCount += 1; reasons.push('RSI 1H low'); }
+    else if (input.rsi1h > 75) { bearishCount += 2; reasons.push('RSI 1H güclü overbought (>75)'); }
+    else if (input.rsi1h > 62) { bearishCount += 1; reasons.push('RSI 1H high'); }
   }
   if (input.rsi4h !== null) {
-    if (input.rsi4h < 35) { bullishCount += 1; reasons.push('HA-RSI 4H oversold'); }
-    else if (input.rsi4h > 65) { bearishCount += 1; reasons.push('HA-RSI 4H overbought'); }
+    if (input.rsi4h < 32) { bullishCount += 1; reasons.push('RSI 4H oversold'); }
+    else if (input.rsi4h > 68) { bearishCount += 1; reasons.push('RSI 4H overbought'); }
   }
   if (input.rsi1d !== null) {
-    if (input.rsi1d < 35) { bullishCount += 1; reasons.push('HA-RSI 1D oversold'); }
-    else if (input.rsi1d > 65) { bearishCount += 1; reasons.push('HA-RSI 1D overbought'); }
+    if (input.rsi1d < 32) { bullishCount += 1; reasons.push('RSI 1D oversold'); }
+    else if (input.rsi1d > 68) { bearishCount += 1; reasons.push('RSI 1D overbought'); }
   }
 
-  if (macdBullish) { bullishCount += 1; reasons.push('HA-MACD bullish'); }
-  if (macdBearish) { bearishCount += 1; reasons.push('HA-MACD bearish'); }
+  if (macdBullish) { bullishCount += 1; reasons.push('MACD bullish'); }
+  if (macdBearish) { bearishCount += 1; reasons.push('MACD bearish'); }
 
   if (haBullish && input.haConsecutive >= 2) {
     bullishCount += 2;
@@ -67,25 +68,25 @@ export function computeSignal(input: SignalInput): SignalResult {
     reasons.push(`HA signal ${input.haSignal.replace('_', ' ')}`);
   }
 
-  if (stochOversold) { bullishCount += 1; reasons.push('HA-Stoch RSI oversold'); }
-  if (stochOverbought) { bearishCount += 1; reasons.push('HA-Stoch RSI overbought'); }
+  if (stochOversold) { bullishCount += 1; reasons.push('Stoch RSI oversold (<15)'); }
+  if (stochOverbought) { bearishCount += 1; reasons.push('Stoch RSI overbought (>85)'); }
 
   const isStrongBuy =
     input.haSignal === 'STRONG_BUY' ||
-    (input.rsi1h !== null && input.rsi1h < 30 && macdBullish && haBullish && input.haConsecutive >= 2);
+    (input.rsi1h !== null && input.rsi1h < 28 && macdBullish && haBullish && input.haConsecutive >= 2);
 
   const isStrongSell =
     input.haSignal === 'STRONG_SELL' ||
-    (input.rsi1h !== null && input.rsi1h > 70 && macdBearish && haBearish && input.haConsecutive >= 2);
+    (input.rsi1h !== null && input.rsi1h > 72 && macdBearish && haBearish && input.haConsecutive >= 2);
 
   const isStrongBuy2 =
-    input.rsi1h !== null && input.rsi1h < 35 &&
-    input.rsi4h !== null && input.rsi4h < 40 &&
+    input.rsi1h !== null && input.rsi1h < 32 &&
+    input.rsi4h !== null && input.rsi4h < 42 &&
     macdBullish && haBullish;
 
   const isStrongSell2 =
-    input.rsi1h !== null && input.rsi1h > 65 &&
-    input.rsi4h !== null && input.rsi4h > 65 &&
+    input.rsi1h !== null && input.rsi1h > 68 &&
+    input.rsi4h !== null && input.rsi4h > 62 &&
     macdBearish && haBearish;
 
   let signal: Signal;

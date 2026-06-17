@@ -174,7 +174,8 @@ function countSetupPersistence(
 
 export function computeSignalAges(input: {
   klineMap: Record<string, Kline[]>;
-  primaryKlinesHa: Kline[];
+  /** XAM (raw) primary klines — MACD/ST/Stoch/RSI/HA yaşı bunun üzərində (qrafiklə eyni bazis) */
+  primaryKlines: Kline[];
   haKlines: Kline[];
   chartSignal: ChartSignal;
   aiSignal: Signal;
@@ -198,17 +199,18 @@ export function computeSignalAges(input: {
   const mtf4hCandles = input.activeTfs.includes('4h')
     ? countMtfPersistence(input.klineMap['4h'] || [], '4h') : 0;
 
-  const macdCandles = countMacdPersistence(input.primaryKlinesHa);
-  const stCandles = countStPersistence(input.primaryKlinesHa);
-  const stochCandles = countStochPersistence(input.primaryKlinesHa.map(k => k.close));
+  // MACD / SuperTrend / Stoch / RSI yaşı XAM klines üzərində (qrafik və displayed RSI ilə eyni)
+  const macdCandles = countMacdPersistence(input.primaryKlines);
+  const stCandles = countStPersistence(input.primaryKlines);
+  const stochCandles = countStochPersistence(input.primaryKlines.map(k => k.close));
   const haCandles = haResult.consecutive;
   const chartCandles = countChartPersistence(input.klineMap, input.chartSignal, input.activeTfs);
-  const aiCandles = countAiPersistence(input.primaryKlinesHa, input.aiSignal);
+  const aiCandles = countAiPersistence(input.primaryKlines, input.aiSignal);
   const zoneCandles = countZonePersistence(
     input.zonePosition, input.zoneBreakoutSignal, haCandles,
   );
 
-  const rsiCandles = countRsiPersistence(input.primaryKlinesHa.map(k => k.close));
+  const rsiCandles = countRsiPersistence(input.primaryKlines.map(k => k.close));
 
   const partial: Partial<SignalAges> = {
     mtf15mCandles, mtf30mCandles, mtf1hCandles, mtf4hCandles,

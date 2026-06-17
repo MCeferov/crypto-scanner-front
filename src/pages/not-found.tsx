@@ -1,21 +1,24 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+import { Link } from 'wouter';
+import { AlertCircle } from 'lucide-react';
+import { useT } from '../context/LocaleContext';
+import { Button } from '../components/ui/button';
 
 export function NotFoundPage() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md mx-4">
-        <CardContent className="pt-6">
-          <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
-          </div>
+  const t = useT();
 
-          <p className="mt-4 text-sm text-gray-600">
-            Did you forget to add the page to the router?
-          </p>
-        </CardContent>
-      </Card>
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center px-4" style={{ background: 'var(--bg)' }}>
+      <div
+        className="w-full max-w-md rounded-xl border p-8 text-center"
+        style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+      >
+        <AlertCircle className="h-10 w-10 mx-auto mb-4" style={{ color: '#ef5350' }} />
+        <h1 className="text-xl font-bold mb-2" style={{ color: 'var(--text)' }}>{t('notFound.title')}</h1>
+        <p className="text-sm mb-6" style={{ color: 'var(--muted)' }}>{t('notFound.message')}</p>
+        <Link href="/">
+          <Button>{t('notFound.back')}</Button>
+        </Link>
+      </div>
     </div>
   );
 }

@@ -27,6 +27,8 @@ export interface Kline {
   low: number;
   close: number;
   volume: number;
+  /** Binance taker buy base volume — real alıcı həcmi */
+  takerBuyVolume?: number;
   closeTime: number;
 }
 
@@ -133,6 +135,7 @@ export async function getKlines(
         low: parseFloat(String(k[3])),
         close: parseFloat(String(k[4])),
         volume: parseFloat(String(k[5])),
+        takerBuyVolume: k[9] != null ? parseFloat(String(k[9])) : undefined,
         closeTime: k[6],
       }));
     } catch (err) {

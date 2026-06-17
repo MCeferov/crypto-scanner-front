@@ -44,14 +44,12 @@ export function HeatmapTable() {
 
   const quoteCols: ColDef[] = useMemo(() => [
     { id: 'change', sk: 'change24h', label: t('table.change24h'), sub: '%', align: 'right', minWidth: 72 },
-    { id: 'mcap', sk: 'marketCap', label: t('table.marketCap'), sub: 'MC', align: 'right', minWidth: 80 },
-    { id: 'volume', sk: 'volume', label: t('table.volume'), sub: '24h', align: 'right', minWidth: 76 },
+    { id: 'volume', sk: null, label: t('table.volume'), sub: t('table.volumeSub'), align: 'center', minWidth: 76 },
   ], [t]);
 
   const extraColDefs: Record<ExtraCol, ColDef> = useMemo(() => ({
     macd:   { id: 'macd',   sk: 'macd',   label: t('columns.macd'),   sub: t('columns.macdHist'), align: 'center', minWidth: 68 },
-    volume: { id: 'volume', sk: 'volume', label: t('columns.volume'), sub: '24h',  align: 'right',  minWidth: 76 },
-    atr:    { id: 'atr',    sk: null,     label: t('columns.atr'),    sub: '%',    align: 'center', minWidth: 54 },
+    volume: { id: 'vol24h', sk: null, label: t('columns.volume'), sub: t('table.volumeSub'), align: 'center', minWidth: 76 },
     stoch:  { id: 'stoch',  sk: null,     label: t('columns.stoch'),  sub: t('columns.stochRsi'), align: 'center', minWidth: 62 },
     st:     { id: 'st',     sk: 'superTrend', label: t('columns.st'), sub: t('columns.stTrend'), align: 'center', minWidth: 58 },
     bb:     { id: 'bb',     sk: null,     label: t('columns.bb'),     sub: t('columns.bbPercent'), align: 'center', minWidth: 52 },
@@ -74,11 +72,12 @@ export function HeatmapTable() {
   const extraColToggleLabels: Record<ExtraCol, string> = useMemo(() => ({
     macd: t('columns.macd'),
     volume: t('columns.extraVol'),
-    atr: t('columns.atr'),
     stoch: t('columns.stoch'),
     st: t('columns.st'),
     bb: t('columns.bb'),
   }), [t]);
+
+  const extraColId = (col: ExtraCol): string => (col === 'volume' ? 'vol24h' : col);
 
   const rowVirtualizer = useVirtualizer({
     count: filteredCoins.length,
@@ -101,7 +100,7 @@ export function HeatmapTable() {
     }));
     const extraCols = ALL_EXTRA_COLS
       .filter(c => visibleExtraCols.includes(c))
-      .map(c => extraColDefs[c]);
+      .map(c => ({ ...extraColDefs[c], id: extraColId(c) }));
     return [...staticLeft, ...quoteCols.filter(c => c.id !== 'volume'), ...rsiCols, ...extraCols, ...coreRightCols];
   }, [visibleRsiCols, visibleExtraCols, showIndicatorColumns, staticLeft, quoteCols, extraColDefs, coreRightCols, t]);
 
@@ -231,7 +230,20 @@ export function HeatmapTable() {
     <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
       {renderColToggles()}
       <div ref={parentRef} className="overflow-auto" style={{ maxHeight: 'calc(100vh - 270px)' }}>
-        <table className="w-full heatmap-table" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <table
+          className="heatmap-table"
+          style={{
+            borderCollapse: 'collapse',
+            tableLayout: 'fixed',
+            width: allCols.reduce((sum, c) => sum + (c.minWidth ?? 60), 0),
+            minWidth: '100%',
+          }}
+        >
+          <colgroup>
+            {allCols.map(col => (
+              <col key={col.id} style={{ width: col.minWidth, minWidth: col.minWidth }} />
+            ))}
+          </colgroup>
           <thead className="sticky top-0 z-30">
             <tr>{allCols.map(col => renderHeader(col))}</tr>
           </thead>

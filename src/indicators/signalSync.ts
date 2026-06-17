@@ -156,9 +156,11 @@ function analyzeSide(signals: TrackedSignal[]): {
   pairScore: number;
   leader: TrackedSignal | null;
   reasons: string[];
+  /** Ən erkən və ən gec siqnal arasındakı şam fərqi (faktiki "lag") */
+  clusterSpread: number;
 } {
   if (signals.length === 0) {
-    return { pairScore: 0.5, leader: null, reasons: ['Aktiv siqnal yoxdur'] };
+    return { pairScore: 0.5, leader: null, reasons: ['Aktiv siqnal yoxdur'], clusterSpread: 99 };
   }
 
   if (signals.length === 1) {
@@ -167,6 +169,7 @@ function analyzeSide(signals: TrackedSignal[]): {
       pairScore: s.candles >= 3 ? 0.85 : 0.6,
       leader: s,
       reasons: [`Lider: ${s.label} (${s.candles} şam)`],
+      clusterSpread: 0,
     };
   }
 
@@ -188,18 +191,21 @@ function analyzeSide(signals: TrackedSignal[]): {
 
   const leader = signals.reduce((a, b) => (a.candles >= b.candles ? a : b));
   const avgPair = pairScores.reduce((s, v) => s + v, 0) / pairScores.length;
-  const minCandles = Math.min(...signals.map(s => s.candles));
+  const candleArr = signals.map(s => s.candles);
+  const minCandles = Math.min(...candleArr);
+  const clusterSpread = Math.max(...candleArr) - minCandles;
 
   const reasons = [
     `Lider (ilk siqnal): ${leader.label} — ${leader.candles} şam`,
-    ...gapNotes.slice(0, 4),
+    `Klaster fərqi: ${clusterSpread} şam (hədəf ≤${IDEAL_GAP_MAX})`,
+    ...gapNotes.slice(0, 3),
   ];
 
   if (minCandles <= 2) {
     reasons.push('⚠ Ən gənc siqnal ≤2 şam — flip riski');
   }
 
-  return { pairScore: avgPair, leader, reasons };
+  return { pairScore: avgPair, leader, reasons, clusterSpread };
 }
 
 export function computeSignalSync(
@@ -236,18 +242,20 @@ export function computeSignalSync(
     }
   }
 
-  const { pairScore, leader, reasons } = analyzeSide(active);
+  const { pairScore, leader, reasons, clusterSpread } = analyzeSide(active);
   const minCandles = active.length > 0 ? Math.min(...active.map(s => s.candles)) : 0;
 
   let syncScore = Math.round(pairScore * 100);
   let syncStatus: SyncStatus = 'WEAK';
   let convictionAdjust = 0;
 
-  if (pairScore >= 0.88 && minCandles >= 3 && active.length >= 3) {
+  // STRONG/GOOD yalnız indikatorlar dar şam pəncərəsində toplaşdıqda (faktiki lag az olduqda).
+  // clusterSpread = ən erkən ↔ ən gec siqnal fərqi; hədəf ≤ IDEAL_GAP_MAX (3).
+  if (pairScore >= 0.88 && clusterSpread <= IDEAL_GAP_MAX && minCandles >= 3 && active.length >= 3) {
     syncStatus = 'STRONG';
     convictionAdjust = 0.4;
     syncScore = Math.min(100, syncScore + 10);
-  } else if (pairScore >= 0.72 && minCandles >= 2) {
+  } else if (pairScore >= 0.72 && clusterSpread <= GOOD_GAP_MAX && minCandles >= 2) {
     syncStatus = 'GOOD';
     convictionAdjust = 0.18;
   } else if (pairScore >= 0.5) {
@@ -257,6 +265,12 @@ export function computeSignalSync(
     syncStatus = 'MISMATCH';
     convictionAdjust = -0.45;
     syncScore = Math.min(syncScore, 40);
+  }
+
+  // Geniş klaster (indikatorlar bir-birini gec təsdiqləyir) → güclü siqnalı zəiflət
+  if (clusterSpread > WEAK_GAP_MAX && syncStatus !== 'MISMATCH') {
+    convictionAdjust -= 0.2;
+    reasons.push(`⚠ Klaster fərqi ${clusterSpread} şam — indikatorlar gec təsdiqləyir`);
   }
 
   if (minCandles <= 1 && syncStatus !== 'MISMATCH') {

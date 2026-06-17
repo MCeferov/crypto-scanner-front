@@ -23,7 +23,7 @@ export function DashboardPage() {
           </p>
         </div>
 
-        <MarketSummary />
+        <MarketSummary useAllPool />
 
         <div
           className="mt-6 rounded-xl border p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"

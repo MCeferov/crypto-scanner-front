@@ -28,12 +28,12 @@ function Stat({
   );
 }
 
-export function MarketSummary() {
+export function MarketSummary({ useAllPool = false }: { useAllPool?: boolean }) {
   const { coins, filteredCoins, assetCategory } = useMarket();
   const t = useT();
 
   const s = useMemo(() => {
-    const pool = assetCategory === 'all' ? coins : filteredCoins;
+    const pool = useAllPool || assetCategory === 'all' ? coins : filteredCoins;
     if (pool.length === 0) return null;
 
     const gainers = pool.filter(c => c.priceChange24h > 0).length;
@@ -57,7 +57,7 @@ export function MarketSummary() {
     };
 
     return { pool: pool.length, gainers, losers, avgChange, topGainer, topLoser, totalVol, avgRsi, byType, cryptoCount: crypto.length };
-  }, [coins, filteredCoins, assetCategory]);
+  }, [coins, filteredCoins, assetCategory, useAllPool]);
 
   if (!s) return null;
 
@@ -69,7 +69,7 @@ export function MarketSummary() {
         <Stat
           label={t('summary.assets')}
           value={`${s.pool}`}
-          sub={assetCategory === 'all' ? t('summary.allCategories') : t(`category.${assetCategory}`)}
+          sub={useAllPool || assetCategory === 'all' ? t('summary.allCategories') : t(`category.${assetCategory}`)}
           accent
         />
         <Stat
@@ -106,7 +106,7 @@ export function MarketSummary() {
             color={s.avgRsi < 40 ? '#26a69a' : s.avgRsi > 60 ? '#ef5350' : 'var(--muted)'}
           />
         )}
-        {assetCategory === 'all' && (
+        {(useAllPool || assetCategory === 'all') && (
           <Stat
             label={t('summary.categoryBreakdown')}
             value={`${s.byType.crypto}·${s.byType.stock}·${s.byType.commodity}·${s.byType.forex}`}

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useRoute, useLocation } from 'wouter';
 import { ArrowLeft } from 'lucide-react';
 import { useMarket } from '../context/MarketContext';
@@ -7,14 +7,23 @@ import { CoinHeader } from '../components/CoinDetail/CoinHeader';
 import { AIAnalysisPanel } from '../components/CoinDetail/AIAnalysisPanel';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { analyzeFromCoin } from '../services/aiAnalysis';
+import { useT } from '../context/LocaleContext';
+import type { Kline } from '../services/binanceApi';
 
 export function CoinDetailPage() {
   const [, params] = useRoute('/coin/:symbol');
   const [, setLocation] = useLocation();
-  const { coins } = useMarket();
+  const { coins, visibleRsiCols, syncAssetKlines } = useMarket();
+  const t = useT();
 
   const symbol = params?.symbol?.toUpperCase() ?? '';
+  const initialTimeframe = visibleRsiCols[0] ?? '1h';
   const coin = useMemo(() => coins.find(c => c.symbol === symbol) ?? null, [coins, symbol]);
+
+  const handleKlinesLoaded = useCallback((interval: string, klines: Kline[]) => {
+    if (!coin) return;
+    syncAssetKlines(coin.id, { [interval]: klines });
+  }, [coin, syncAssetKlines]);
 
   const analysis = useMemo(() => {
     if (!coin || !coin.indicatorsLoaded) return null;
@@ -24,7 +33,7 @@ export function CoinDetailPage() {
   if (!symbol) {
     return (
       <div className="flex items-center justify-center h-screen" style={{ color: 'var(--chart-text)' }}>
-        Invalid symbol
+        {t('detail.notFound')}
       </div>
     );
   }
@@ -41,7 +50,7 @@ export function CoinDetailPage() {
           style={{ color: 'var(--chart-text)' }}
         >
           <ArrowLeft size={14} />
-          Back to Scanner
+          {t('detail.back')}
         </button>
         <ThemeToggle />
       </div>
@@ -50,7 +59,11 @@ export function CoinDetailPage() {
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="flex-1 min-w-0 flex flex-col p-3">
-          <TradingChart symbol={symbol} />
+          <TradingChart
+            symbol={symbol}
+            initialTimeframe={initialTimeframe}
+            onKlinesLoaded={handleKlinesLoaded}
+          />
         </div>
 
         <div

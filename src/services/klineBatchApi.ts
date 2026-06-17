@@ -2,6 +2,9 @@ import type { Kline } from './binanceApi';
 import type { AssetType } from '../types/asset';
 import { ESSENTIAL_TIMEFRAMES, EXTRA_TIMEFRAMES } from './binanceApi';
 
+/** Cədvəl və qrafik eyni indikator hesabı üçün eyni mum sayı */
+export const INDICATOR_KLINE_LIMIT = 200;
+
 export interface KlineAssetRef {
   id: string;
   symbol: string;
@@ -68,11 +71,12 @@ export function streamKlinesFromServer(
 export async function batchKlinesFromServer(
   assets: KlineAssetRef[],
   intervals: readonly string[] = ESSENTIAL_TIMEFRAMES,
+  refresh = false,
 ): Promise<Map<string, Record<string, Kline[]>>> {
   const res = await fetch('/api/markets/klines/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ assets, intervals }),
+    body: JSON.stringify({ assets, intervals, refresh }),
   });
   if (!res.ok) throw new Error(`Batch klines failed: ${res.status}`);
   const json = await res.json() as { data: Record<string, Record<string, Kline[]>> };
@@ -84,7 +88,7 @@ export async function getChartKlines(
   type: AssetType,
   symbol: string,
   interval: string,
-  limit = 200,
+  limit = INDICATOR_KLINE_LIMIT,
 ): Promise<Kline[]> {
   const qs = new URLSearchParams({ type, symbol, interval, limit: String(limit) });
   const res = await fetch(`/api/markets/klines/chart?${qs}`);

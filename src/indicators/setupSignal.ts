@@ -69,10 +69,10 @@ function riskScore(rr: number | null, bullish: boolean): number {
 
 function rsiScore(rsi: number | null): number {
   if (rsi === null) return 3;
-  if (rsi < 30) return 4.5;
-  if (rsi < 40) return 3.8;
-  if (rsi > 70) return 1.5;
-  if (rsi > 60) return 2.2;
+  if (rsi < 25) return 4.6;   // güclü oversold (əvvəl <30)
+  if (rsi < 38) return 3.8;
+  if (rsi > 75) return 1.4;   // güclü overbought (əvvəl >70)
+  if (rsi > 62) return 2.2;
   return 3;
 }
 
@@ -223,7 +223,7 @@ export function computeUnifiedSetup(coin: CoinData, sync?: SignalSyncResult): Se
   }
 
   if (coin.stochRsiK !== null) {
-    const stochPts = coin.stochRsiK < 20 ? 4.2 : coin.stochRsiK > 80 ? 1.8 : 3;
+    const stochPts = coin.stochRsiK < 15 ? 4.2 : coin.stochRsiK > 85 ? 1.8 : 3;
     votes.push({
       score: stochPts,
       weight: 1,
@@ -248,7 +248,7 @@ export function computeUnifiedSetup(coin: CoinData, sync?: SignalSyncResult): Se
   }
 
   if (coin.bbPercent !== null) {
-    const bbPts = coin.bbPercent < 0.2 ? 3.8 : coin.bbPercent > 0.8 ? 2.2 : 3;
+    const bbPts = coin.bbPercent < 0.15 ? 3.8 : coin.bbPercent > 0.85 ? 2.2 : 3;
     votes.push({
       score: bbPts,
       weight: 0.8,
