@@ -35,12 +35,13 @@ export interface Kline {
 const EXCLUDED = ['UPUSDT', 'DOWNUSDT', 'BULLUSDT', 'BEARUSDT', 'TUSDT'];
 const EXCLUDED_FRAGMENTS = ['UP', 'DOWN', 'BULL', 'BEAR', 'LEVERAGE'];
 
-const ALL_TIMEFRAMES = ['15m', '30m', '1h', '4h', '1d'] as const;
-/** İlk mərhələ — indikatorlar üçün kifayət (3 TF × 50 coin = 150 sorğu) */
+const ALL_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'] as const;
+/** İlk mərhələ — əsas TF-lər */
 export const ESSENTIAL_TIMEFRAMES = ['15m', '1h', '4h'] as const;
-export const EXTRA_TIMEFRAMES = ['30m', '1d'] as const;
-/** MACD(35) + buffer — limit 100 = weight 1 (200 = weight 2) */
-const KLINE_LIMIT = 100;
+/** Qısa TF-lər + əlavə — RSI/MACD dinamik üçün 1m/5m daxil */
+export const EXTRA_TIMEFRAMES = ['1m', '5m', '30m', '1d'] as const;
+/** MACD(26+9) + buffer — limit 1000 EMA sabitliyi / yaş sayımı üçün */
+const KLINE_LIMIT = 1000;
 
 const TICKER_CACHE_KEY = 'binance:ticker24hr';
 const TICKER_CACHE_TTL_MS = 45_000;
@@ -60,14 +61,14 @@ function isValidPair(symbol: string): boolean {
   return true;
 }
 
-/** Minimum candles needed: MACD (35) on 1h, RSI (15) on 15m */
+/** Minimum candles needed for any core TF */
 export function hasMinimumKlineData(klineMap: Record<string, Kline[]>): boolean {
   return (klineMap['1h']?.length ?? 0) >= 35 && (klineMap['15m']?.length ?? 0) >= 15;
 }
 
-/** Relaxed threshold for partial indicator compute when a symbol fails full fetch */
+/** Relaxed — istənilən TF-də kifayət qədər mum varsa qismən göstər */
 export function hasPartialKlineData(klineMap: Record<string, Kline[]>): boolean {
-  return (klineMap['1h']?.length ?? 0) >= 20 || (klineMap['15m']?.length ?? 0) >= 20;
+  return ALL_TIMEFRAMES.some(tf => (klineMap[tf]?.length ?? 0) >= 20);
 }
 
 function readTickerCache(): Ticker24h[] | null {

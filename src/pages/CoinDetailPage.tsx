@@ -6,6 +6,7 @@ import { TradingChart } from '../components/Chart/TradingChart';
 import { CoinHeader } from '../components/CoinDetail/CoinHeader';
 import { AIAnalysisPanel } from '../components/CoinDetail/AIAnalysisPanel';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { LanguageSwitcher } from '../components/Controls/LanguageSwitcher';
 import { analyzeFromCoin } from '../services/aiAnalysis';
 import { useT } from '../context/LocaleContext';
 import type { Kline } from '../services/binanceApi';
@@ -17,7 +18,7 @@ export function CoinDetailPage() {
   const t = useT();
 
   const symbol = params?.symbol?.toUpperCase() ?? '';
-  const initialTimeframe = visibleRsiCols[0] ?? '1h';
+  const initialTimeframe = visibleRsiCols[0] ?? '1m';
   const coin = useMemo(() => coins.find(c => c.symbol === symbol) ?? null, [coins, symbol]);
 
   const handleKlinesLoaded = useCallback((interval: string, klines: Kline[]) => {
@@ -27,8 +28,8 @@ export function CoinDetailPage() {
 
   const analysis = useMemo(() => {
     if (!coin || !coin.indicatorsLoaded) return null;
-    return analyzeFromCoin(coin);
-  }, [coin]);
+    return analyzeFromCoin(coin, t);
+  }, [coin, t]);
 
   if (!symbol) {
     return (
@@ -52,7 +53,10 @@ export function CoinDetailPage() {
           <ArrowLeft size={14} />
           {t('detail.back')}
         </button>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+          <ThemeToggle />
+        </div>
       </div>
 
       <CoinHeader coin={coin} symbol={symbol} />

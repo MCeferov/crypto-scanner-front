@@ -1,4 +1,5 @@
 import type { Kline } from '../services/binanceApi';
+import { BREAKOUT_MIN_CONFIRMS, BREAKOUT_STRONG_CONFIRMS } from './signalConfig';
 
 export type ZoneType = 'supply' | 'demand';
 
@@ -174,6 +175,17 @@ function detectZones(klines: Kline[], atr: number | null): SupplyDemandZone[] {
   let supplyZones = clusterPivots(swingHighPrices, mergeDistance, 'supply', atr);
   let demandZones = clusterPivots(swingLowPrices, mergeDistance, 'demand', atr);
 
+  // Order-block təxmini: impulse → kiçik base → departure (son 40 şam)
+  const obZones = detectOrderBlocks(klines, atr);
+  for (const z of obZones) {
+    if (z.type === 'demand') demandZones.push(z);
+    else supplyZones.push(z);
+  }
+
+  // Volume@zone strength boost
+  demandZones = boostZoneStrengthByVolume(demandZones, klines);
+  supplyZones = boostZoneStrengthByVolume(supplyZones, klines);
+
   if (supplyZones.length === 0 && demandZones.length === 0) {
     return fallbackZones(klines, atr);
   }
@@ -184,7 +196,59 @@ function detectZones(klines: Kline[], atr: number | null): SupplyDemandZone[] {
     if (demandZones.length === 0) demandZones = fallback.filter(z => z.type === 'demand');
   }
 
-  return [...demandZones, ...supplyZones];
+  // Ən güclü zonaları saxla
+  demandZones.sort((a, b) => b.strength - a.strength);
+  supplyZones.sort((a, b) => b.strength - a.strength);
+
+  return [...demandZones.slice(0, 4), ...supplyZones.slice(0, 4)];
+}
+
+/** Impulse → consolidation → continuation → order block zone */
+function detectOrderBlocks(klines: Kline[], atr: number | null): SupplyDemandZone[] {
+  const out: SupplyDemandZone[] = [];
+  const n = klines.length;
+  if (n < 25) return out;
+  const start = Math.max(5, n - 40);
+  const pad = atr && atr > 0 ? atr * 0.2 : klines[n - 1].close * 0.002;
+
+  for (let i = start; i < n - 4; i++) {
+    const a = klines[i];
+    const b = klines[i + 1];
+    const c = klines[i + 2];
+    const body = Math.abs(a.close - a.open);
+    const range = a.high - a.low;
+    if (range <= 0 || body / range < 0.55) continue;
+
+    // Bullish OB: down/indecision candle before strong up move
+    if (c.close > a.high && b.high - b.low < range * 0.7) {
+      const top = Math.max(a.open, a.close) + pad;
+      const bottom = Math.min(a.low, b.low) - pad * 0.5;
+      out.push({ type: 'demand', top, bottom, strength: 3 + (a.volume > 0 ? 1 : 0), touches: 1 });
+    }
+    // Bearish OB: up candle before strong down move
+    if (c.close < a.low && b.high - b.low < range * 0.7) {
+      const bottom = Math.min(a.open, a.close) - pad;
+      const top = Math.max(a.high, b.high) + pad * 0.5;
+      out.push({ type: 'supply', top, bottom, strength: 3 + (a.volume > 0 ? 1 : 0), touches: 1 });
+    }
+  }
+  return out;
+}
+
+function boostZoneStrengthByVolume(zones: SupplyDemandZone[], klines: Kline[]): SupplyDemandZone[] {
+  const avgVol = klines.reduce((s, k) => s + k.volume, 0) / Math.max(1, klines.length);
+  return zones.map(z => {
+    let volHits = 0;
+    for (const k of klines.slice(-60)) {
+      const mid = (k.high + k.low) / 2;
+      if (mid >= z.bottom && mid <= z.top && k.volume > avgVol * 1.2) volHits++;
+    }
+    return {
+      ...z,
+      strength: z.strength + Math.min(3, volHits),
+      touches: Math.max(z.touches, volHits),
+    };
+  });
 }
 
 function nearestDemand(zones: SupplyDemandZone[], price: number): SupplyDemandZone | null {
@@ -284,7 +348,7 @@ function computeSlTp(
   demand: SupplyDemandZone | null,
   supply: SupplyDemandZone | null,
   atr: number | null,
-): { stopLoss: number; takeProfit: number; riskReward: number } {
+): { stopLoss: number; takeProfit: number; riskReward: number; rrNote: string } {
   const buffer = atr && atr > 0 ? atr * SL_ATR_BUFFER : price * 0.008;
 
   if (direction === 'buy') {
@@ -292,22 +356,41 @@ function computeSlTp(
       ? Math.max(demand.bottom - buffer, price * 0.9)
       : price - buffer * 2;
     const risk = Math.max(price - stopLoss, buffer);
-    const takeProfit = supply
-      ? Math.max(supply.bottom, price + risk * 2)
-      : price + risk * 2;
+    // Dinamik TP: əks zone; 2× floor YOX — real liquidity məsafəsi
+    let takeProfit: number;
+    let rrNote: string;
+    if (supply && supply.bottom > price) {
+      takeProfit = supply.bottom;
+      rrNote = `TP=supply $${supply.bottom.toFixed(4)}; SL=demand/ATR; risk $${risk.toFixed(4)}`;
+    } else if (atr && atr > 0) {
+      takeProfit = price + atr * 2.5;
+      rrNote = `TP=2.5×ATR (zone yox); SL buffer ${buffer.toFixed(4)}`;
+    } else {
+      takeProfit = price + risk * 1.8;
+      rrNote = 'TP=1.8×risk (fallback, zone/ATR zəif)';
+    }
     const reward = takeProfit - price;
-    return { stopLoss, takeProfit, riskReward: reward / risk };
+    return { stopLoss, takeProfit, riskReward: risk > 0 ? reward / risk : 0, rrNote };
   }
 
   const stopLoss = supply
     ? supply.top + buffer
     : price + buffer * 2;
   const risk = Math.max(stopLoss - price, buffer);
-  const takeProfit = demand
-    ? Math.min(demand.top, price - risk * 2)
-    : price - risk * 2;
+  let takeProfit: number;
+  let rrNote: string;
+  if (demand && demand.top < price) {
+    takeProfit = demand.top;
+    rrNote = `TP=demand $${demand.top.toFixed(4)}; SL=supply/ATR; risk $${risk.toFixed(4)}`;
+  } else if (atr && atr > 0) {
+    takeProfit = price - atr * 2.5;
+    rrNote = `TP=2.5×ATR (zone yox); SL buffer ${buffer.toFixed(4)}`;
+  } else {
+    takeProfit = price - risk * 1.8;
+    rrNote = 'TP=1.8×risk (fallback, zone/ATR zəif)';
+  }
   const reward = price - takeProfit;
-  return { stopLoss, takeProfit, riskReward: reward / risk };
+  return { stopLoss, takeProfit, riskReward: risk > 0 ? reward / risk : 0, rrNote };
 }
 
 function countConfirmations(
@@ -375,6 +458,7 @@ export function analyzeSupplyDemand(input: ZoneAnalysisInput): ZoneAnalysisResul
   const reasons: string[] = [];
   if (demand) reasons.push(`Demand $${demand.bottom.toFixed(4)}–$${demand.top.toFixed(4)}`);
   if (supply) reasons.push(`Supply $${supply.bottom.toFixed(4)}–$${supply.top.toFixed(4)}`);
+  reasons.push(baseline.rrNote);
 
   const breakout = detectBreakout(input.klines, demand, supply);
   let zoneSignal: ZoneSignal = 'ZONE_NEUTRAL';
@@ -384,21 +468,31 @@ export function analyzeSupplyDemand(input: ZoneAnalysisInput): ZoneAnalysisResul
   if (breakout === 'bullish') {
     zoneBreakoutReasons.push('Supply (S) zone qırıldı → yuxarı');
     const { count, reasons: conf } = countConfirmations(input, 'buy', input.klines);
-    zoneBreakoutSignal = count >= 3 ? 'STRONG_LONG' : 'LONG';
     zoneBreakoutReasons.push(...conf);
-    reasons.push('Supply breakout');
-    reasons.push(...conf);
-    if (count >= 4) zoneSignal = 'ZONE_STRONG_BUY';
-    else if (count >= 2) zoneSignal = 'ZONE_BUY';
+    if (count >= BREAKOUT_MIN_CONFIRMS) {
+      zoneBreakoutSignal = count >= BREAKOUT_STRONG_CONFIRMS ? 'STRONG_LONG' : 'LONG';
+      reasons.push('Supply breakout confirmed');
+      reasons.push(...conf);
+      if (count >= 4) zoneSignal = 'ZONE_STRONG_BUY';
+      else if (count >= 2) zoneSignal = 'ZONE_BUY';
+    } else {
+      zoneBreakoutReasons.push(`Breakout təsdiqsiz (${count}<${BREAKOUT_MIN_CONFIRMS}) — ignore`);
+      reasons.push('Supply breakout — confirmation yetərli deyil');
+    }
   } else if (breakout === 'bearish') {
     zoneBreakoutReasons.push('Demand (D) zone qırıldı → aşağı');
     const { count, reasons: conf } = countConfirmations(input, 'sell', input.klines);
-    zoneBreakoutSignal = count >= 3 ? 'STRONG_SHORT' : 'SHORT';
     zoneBreakoutReasons.push(...conf);
-    reasons.push('Demand breakdown');
-    reasons.push(...conf);
-    if (count >= 4) zoneSignal = 'ZONE_STRONG_SELL';
-    else if (count >= 2) zoneSignal = 'ZONE_SELL';
+    if (count >= BREAKOUT_MIN_CONFIRMS) {
+      zoneBreakoutSignal = count >= BREAKOUT_STRONG_CONFIRMS ? 'STRONG_SHORT' : 'SHORT';
+      reasons.push('Demand breakdown confirmed');
+      reasons.push(...conf);
+      if (count >= 4) zoneSignal = 'ZONE_STRONG_SELL';
+      else if (count >= 2) zoneSignal = 'ZONE_SELL';
+    } else {
+      zoneBreakoutReasons.push(`Breakout təsdiqsiz (${count}<${BREAKOUT_MIN_CONFIRMS}) — ignore`);
+      reasons.push('Demand breakdown — confirmation yetərli deyil');
+    }
   } else if (zonePosition === 'at_demand' || zonePosition === 'near_demand') {
     const { count, reasons: conf } = countConfirmations(input, 'buy', input.klines);
     const bouncing = input.klines.length >= 2 &&

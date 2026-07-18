@@ -19,7 +19,9 @@ interface ColDef {
   stickyLeft?: number;
 }
 
-const RSI_TF_LABELS: Record<RsiTf, string> = { '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' };
+const RSI_TF_LABELS: Record<RsiTf, string> = {
+  '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D',
+};
 const ROW_HEIGHT = 44;
 
 function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
@@ -44,7 +46,7 @@ export function HeatmapTable() {
 
   const quoteCols: ColDef[] = useMemo(() => [
     { id: 'change', sk: 'change24h', label: t('table.change24h'), sub: '%', align: 'right', minWidth: 72 },
-    { id: 'volume', sk: null, label: t('table.volume'), sub: t('table.volumeSub'), align: 'center', minWidth: 76 },
+    { id: 'volume', sk: 'volume', label: t('table.volume'), sub: '24h', align: 'right', minWidth: 76 },
   ], [t]);
 
   const extraColDefs: Record<ExtraCol, ColDef> = useMemo(() => ({
@@ -52,20 +54,18 @@ export function HeatmapTable() {
     volume: { id: 'vol24h', sk: null, label: t('columns.volume'), sub: t('table.volumeSub'), align: 'center', minWidth: 76 },
     stoch:  { id: 'stoch',  sk: null,     label: t('columns.stoch'),  sub: t('columns.stochRsi'), align: 'center', minWidth: 62 },
     st:     { id: 'st',     sk: 'superTrend', label: t('columns.st'), sub: t('columns.stTrend'), align: 'center', minWidth: 58 },
-    bb:     { id: 'bb',     sk: null,     label: t('columns.bb'),     sub: t('columns.bbPercent'), align: 'center', minWidth: 52 },
   }), [t]);
 
   const coreRightCols: ColDef[] = useMemo(() => [
     { id: 'trend',    sk: 'trendScore', label: t('columns.trend'),    sub: t('columns.trendScore'), align: 'center', minWidth: 80 },
-    { id: 'mtf',      sk: null,         label: t('columns.mtf'),      sub: t('columns.mtfRange'), align: 'center', minWidth: 108 },
+    { id: 'mtf',      sk: null,         label: t('columns.mtf'),      sub: '1·5·15·30·1H·4H', align: 'center', minWidth: 140 },
     { id: 'chartSig', sk: 'chartSignal', label: t('columns.chart'),   sub: t('columns.chartSignal'), align: 'center', minWidth: 64 },
     { id: 'research', sk: 'research',    label: t('columns.research'), sub: t('columns.researchSub'), align: 'center', minWidth: 72 },
-    { id: 'ha',       sk: 'haSignal',   label: t('columns.ha'),       sub: '15m', align: 'center', minWidth: 44 },
-    { id: 'zone',     sk: null,         label: t('columns.zone'),     sub: t('columns.zoneSub'), align: 'center', minWidth: 44 },
+    { id: 'ha',       sk: 'haSignal',   label: t('columns.ha'),       sub: 'TF', align: 'center', minWidth: 44 },
+    { id: 'zone',     sk: null,         label: t('columns.zone'),     sub: 'D / S', align: 'center', minWidth: 88 },
     { id: 'break',    sk: 'zoneBreakout', label: t('columns.break'),  sub: t('columns.breakDir'), align: 'center', minWidth: 68 },
-    { id: 'sl',       sk: 'stopLoss',   label: t('columns.sl'), align: 'right',  minWidth: 72 },
-    { id: 'tp',       sk: 'takeProfit', label: t('columns.tp'), align: 'right',  minWidth: 72 },
-    { id: 'rr',       sk: 'riskReward', label: t('columns.rr'), align: 'center', minWidth: 44 },
+    { id: 'sl',       sk: 'stopLoss',   label: t('columns.sl'), sub: 'S/D+ATR', align: 'right',  minWidth: 72 },
+    { id: 'tp',       sk: 'takeProfit', label: t('columns.tp'), sub: 'Zone/ATR', align: 'right',  minWidth: 72 },
     { id: 'setup',    sk: 'setup',      label: t('columns.setup'), sub: t('columns.setupFinal'), align: 'center', minWidth: 88 },
   ], [t]);
 
@@ -74,7 +74,6 @@ export function HeatmapTable() {
     volume: t('columns.extraVol'),
     stoch: t('columns.stoch'),
     st: t('columns.st'),
-    bb: t('columns.bb'),
   }), [t]);
 
   const extraColId = (col: ExtraCol): string => (col === 'volume' ? 'vol24h' : col);

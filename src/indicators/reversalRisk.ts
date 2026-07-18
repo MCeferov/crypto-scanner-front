@@ -22,11 +22,12 @@ export function riskRewardExplanation(
   }
   const dir = direction === 'buy' ? 'Alış' : direction === 'sell' ? 'Satış' : 'Neytral';
   return [
-    `R:R = ${rr.toFixed(1)} (mükafat ÷ risk)`,
-    `${dir}: SL $${stopLoss.toFixed(4)} → TP $${takeProfit.toFixed(4)}`,
-    'SL: demand zone altı + ATR buffer (alışda)',
-    'TP: supply zone və ya 2× risk məsafəsi',
-    'Yüksək R:R = potensial gəlir riskdən böyük, amma flip riski ayrıca yoxlanmalıdır',
+    `R:R = ${rr.toFixed(2)} (mükafat ÷ risk)`,
+    `${dir}: Entry cari qiymət → SL $${stopLoss.toFixed(4)} → TP $${takeProfit.toFixed(4)}`,
+    'SL: demand/supply zone kənarı + 0.5×ATR buffer',
+    'TP: ən yaxın əks liquidity zone (2× risk floor YOX)',
+    'Zone yoxdursa: TP ≈ 2.5×ATR və ya 1.8×risk fallback',
+    'R:R < 1.5 → setup veto / confidence cəzası',
   ].join('\n');
 }
 
@@ -43,6 +44,8 @@ export function computeReversalRisk(coin: CoinData): ReversalAnalysis {
   let riskPoints = 0;
 
   const tfs = [
+    { label: '1m', sig: coin.mtf1m },
+    { label: '5m', sig: coin.mtf5m },
     { label: '15m', sig: coin.mtf15m },
     { label: '30m', sig: coin.mtf30m },
     { label: '1H', sig: coin.mtf1h },
@@ -56,16 +59,16 @@ export function computeReversalRisk(coin: CoinData): ReversalAnalysis {
     mtfAlignment = 'CONFLICT';
     riskPoints += 2;
     reasons.push(`TF ziddiyyəti: ${buyTfs.join(', ')} BUY vs ${sellTfs.join(', ')} SELL`);
-  } else if (buyTfs.length > 0 && buyTfs.length < 4 && sellTfs.length === 0) {
+  } else if (buyTfs.length > 0 && buyTfs.length < tfs.length && sellTfs.length === 0) {
     mtfAlignment = 'MIXED';
-  } else if (sellTfs.length > 0 && sellTfs.length < 4 && buyTfs.length === 0) {
+  } else if (sellTfs.length > 0 && sellTfs.length < tfs.length && buyTfs.length === 0) {
     mtfAlignment = 'MIXED';
   }
 
   // Qısa TF satış, uzun TF alış — klassik "tez flip" ssenarisi
-  const shortBear = coin.mtf15m === 'SELL' || coin.mtf30m === 'SELL';
+  const shortBear = coin.mtf1m === 'SELL' || coin.mtf5m === 'SELL' || coin.mtf15m === 'SELL' || coin.mtf30m === 'SELL';
   const longBull = coin.mtf1h === 'BUY' || coin.mtf4h === 'BUY';
-  const shortBull = coin.mtf15m === 'BUY' || coin.mtf30m === 'BUY';
+  const shortBull = coin.mtf1m === 'BUY' || coin.mtf5m === 'BUY' || coin.mtf15m === 'BUY' || coin.mtf30m === 'BUY';
   const longBear = coin.mtf1h === 'SELL' || coin.mtf4h === 'SELL';
   const setupBull = coin.setupSignal === 'BUY' || coin.setupSignal === 'STRONG_BUY';
   const setupBear = coin.setupSignal === 'SELL' || coin.setupSignal === 'STRONG_SELL';
@@ -155,12 +158,8 @@ export function applyReversalPenalty(
   let conviction = setupConviction - penalty;
 
   let signal = setupSignal;
-  if (reversalRisk === 'HIGH') {
-    if (setupSignal === 'STRONG_BUY') signal = 'BUY';
-    else if (setupSignal === 'BUY') signal = 'NEUTRAL';
-    else if (setupSignal === 'STRONG_SELL') signal = 'SELL';
-    else if (setupSignal === 'SELL') signal = 'NEUTRAL';
-  } else if (reversalRisk === 'MEDIUM') {
+  // HIGH/MEDIUM yalnız STRONG endirir — BUY/SELL siqnallarını öldürmürük
+  if (reversalRisk === 'HIGH' || reversalRisk === 'MEDIUM') {
     if (setupSignal === 'STRONG_BUY') signal = 'BUY';
     else if (setupSignal === 'STRONG_SELL') signal = 'SELL';
   }

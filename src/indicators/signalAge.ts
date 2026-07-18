@@ -1,7 +1,7 @@
 import type { Kline } from '../services/binanceApi';
 import { calculateMACD } from './macd';
 import { calculateSuperTrend } from './supertrend';
-import { analyzeHeikinAshi, heikinAshiToKlines } from './heikinAshi';
+import { analyzeHeikinAshi } from './heikinAshi';
 import { analyzeTimeframe, type MtfTf, type TfDir } from './chartAnalysis';
 import type { Signal } from './aiSignal';
 import type { ChartSignal } from './chartAnalysis';
@@ -10,9 +10,12 @@ import type { ZonePosition, ZoneBreakoutSignal } from './supplyDemand';
 import { getLatestStochRSI } from './stochRsi';
 import { getLatestRSI } from './rsi';
 
-const MAX_LOOKBACK = 24;
+/** Qısa TF-lərdə MACD uzun müddət eyni işarədə qala bilər — 48 cap detail ilə uyğunsuzluq yaradırdı */
+const MAX_LOOKBACK = 1000;
 
 export interface SignalAges {
+  mtf1mCandles: number;
+  mtf5mCandles: number;
   mtf15mCandles: number;
   mtf30mCandles: number;
   mtf1hCandles: number;
@@ -42,29 +45,30 @@ function countMtfPersistence(klines: Kline[], tf: MtfTf): number {
   return count;
 }
 
-function countMacdPersistence(klinesHa: Kline[]): number {
-  const closes = klinesHa.map(k => k.close);
-  const series = calculateMACD(closes);
-  if (series.length < 1) return 0;
-  const lastSign = series[series.length - 1].histogram > 0 ? 1 : series[series.length - 1].histogram < 0 ? -1 : 0;
-  if (lastSign === 0) return 0;
-  let count = 0;
-  for (let i = series.length - 1; i >= 0 && count < MAX_LOOKBACK; i--) {
-    const s = series[i].histogram > 0 ? 1 : series[i].histogram < 0 ? -1 : 0;
-    if (s === lastSign) count++;
-    else break;
-  }
-  return count;
-}
-
-function countStPersistence(klinesHa: Kline[]): number {
-  const series = calculateSuperTrend(klinesHa);
+/** Son SuperTrend qırılmasından (trend flip) indiyə qədər şam sayı — dəyib-qayıtma sayılmır */
+function countStPersistence(klines: Kline[]): number {
+  const series = calculateSuperTrend(klines);
   if (series.length < 1) return 0;
   const last = series[series.length - 1].trend;
   let count = 0;
   for (let i = series.length - 1; i >= 0 && count < MAX_LOOKBACK; i--) {
     if (series[i].trend === last) count++;
-    else break;
+    else break; // ilk əks trend = son qırılma
+  }
+  return count;
+}
+
+function countMacdPersistence(klines: Kline[]): number {
+  const closes = klines.map(k => k.close);
+  const series = calculateMACD(closes);
+  if (series.length < 1) return 0;
+  // Chart ilə eyni: histogram >= 0 bullish (yaşıl), < 0 bearish
+  const lastSign = series[series.length - 1].histogram >= 0 ? 1 : -1;
+  let count = 0;
+  for (let i = series.length - 1; i >= 0 && count < MAX_LOOKBACK; i--) {
+    const s = series[i].histogram >= 0 ? 1 : -1;
+    if (s === lastSign) count++;
+    else break; // histogram rəng dəyişməsi = son qırılma
   }
   return count;
 }
@@ -158,6 +162,8 @@ function countSetupPersistence(
   for (const tf of activeTfs) {
     const dir = mtfDirs[tf];
     const ageMap: Record<MtfTf, number | undefined> = {
+      '1m': partial.mtf1mCandles,
+      '5m': partial.mtf5mCandles,
       '15m': partial.mtf15mCandles,
       '30m': partial.mtf30mCandles,
       '1h': partial.mtf1hCandles,
@@ -182,6 +188,8 @@ export function computeSignalAges(input: {
   setupSignal: SetupSignal;
   zonePosition: ZonePosition;
   zoneBreakoutSignal: ZoneBreakoutSignal;
+  mtf1m: TfDir;
+  mtf5m: TfDir;
   mtf15m: TfDir;
   mtf30m: TfDir;
   mtf1h: TfDir;
@@ -190,6 +198,10 @@ export function computeSignalAges(input: {
 }): SignalAges {
   const haResult = analyzeHeikinAshi(input.haKlines);
 
+  const mtf1mCandles = input.activeTfs.includes('1m')
+    ? countMtfPersistence(input.klineMap['1m'] || [], '1m') : 0;
+  const mtf5mCandles = input.activeTfs.includes('5m')
+    ? countMtfPersistence(input.klineMap['5m'] || [], '5m') : 0;
   const mtf15mCandles = input.activeTfs.includes('15m')
     ? countMtfPersistence(input.klineMap['15m'] || [], '15m') : 0;
   const mtf30mCandles = input.activeTfs.includes('30m')
@@ -199,7 +211,6 @@ export function computeSignalAges(input: {
   const mtf4hCandles = input.activeTfs.includes('4h')
     ? countMtfPersistence(input.klineMap['4h'] || [], '4h') : 0;
 
-  // MACD / SuperTrend / Stoch / RSI yaşı XAM klines üzərində (qrafik və displayed RSI ilə eyni)
   const macdCandles = countMacdPersistence(input.primaryKlines);
   const stCandles = countStPersistence(input.primaryKlines);
   const stochCandles = countStochPersistence(input.primaryKlines.map(k => k.close));
@@ -213,7 +224,7 @@ export function computeSignalAges(input: {
   const rsiCandles = countRsiPersistence(input.primaryKlines.map(k => k.close));
 
   const partial: Partial<SignalAges> = {
-    mtf15mCandles, mtf30mCandles, mtf1hCandles, mtf4hCandles,
+    mtf1mCandles, mtf5mCandles, mtf15mCandles, mtf30mCandles, mtf1hCandles, mtf4hCandles,
     macdCandles, stCandles, stochCandles, haCandles, chartCandles, aiCandles, zoneCandles,
     rsiCandles,
   };
@@ -221,7 +232,10 @@ export function computeSignalAges(input: {
   const setupCandles = countSetupPersistence(
     input.setupSignal,
     partial,
-    { '15m': input.mtf15m, '30m': input.mtf30m, '1h': input.mtf1h, '4h': input.mtf4h },
+    {
+      '1m': input.mtf1m, '5m': input.mtf5m,
+      '15m': input.mtf15m, '30m': input.mtf30m, '1h': input.mtf1h, '4h': input.mtf4h,
+    },
     input.activeTfs,
   );
 

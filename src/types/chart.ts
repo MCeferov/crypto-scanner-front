@@ -40,7 +40,7 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
   volume: { enabled: true },
   stochRsi: { rsiPeriod: 14, stochPeriod: 14, kSmooth: 3, dSmooth: 3, enabled: true, panel: true },
   superTrend: { period: 10, multiplier: 3, enabled: true },
-  bollingerBands: { period: 20, stdDev: 2, enabled: true },
+  bollingerBands: { period: 20, stdDev: 2, enabled: false },
 };
 
 export interface ChartThemeColors {

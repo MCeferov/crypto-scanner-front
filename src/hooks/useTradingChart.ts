@@ -10,7 +10,7 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts';
 import type { Kline } from '../services/binanceApi';
-import { getChartKlines, INDICATOR_KLINE_LIMIT } from '../services/klineBatchApi';
+import { getChartKlines, CHART_KLINE_LIMIT } from '../services/klineBatchApi';
 import { ChartKlineWebSocket } from '../services/chartWebSocket';
 import {
   CHART_TIMEFRAMES,
@@ -220,7 +220,7 @@ export function useTradingChart(
     setError(null);
     try {
       const interval = getBinanceInterval(tf);
-      const klines = await getChartKlines(assetType, sym, interval, INDICATOR_KLINE_LIMIT);
+      const klines = await getChartKlines(assetType, sym, interval, CHART_KLINE_LIMIT);
       klinesRef.current = klines;
       applySeries(klines, s);
       onKlinesLoadedRef.current?.(interval, klines);

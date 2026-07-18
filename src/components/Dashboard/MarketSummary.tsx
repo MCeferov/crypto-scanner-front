@@ -28,7 +28,14 @@ function Stat({
   );
 }
 
-export function MarketSummary({ useAllPool = false }: { useAllPool?: boolean }) {
+export function MarketSummary({
+  useAllPool = false,
+  embedded = false,
+}: {
+  useAllPool?: boolean;
+  /** Dashboard kartı içində — xarici border/padding yox */
+  embedded?: boolean;
+}) {
   const { coins, filteredCoins, assetCategory } = useMarket();
   const t = useT();
 
@@ -64,8 +71,11 @@ export function MarketSummary({ useAllPool = false }: { useAllPool?: boolean }) 
   const changeColor = s.avgChange > 0 ? '#26a69a' : s.avgChange < 0 ? '#ef5350' : 'var(--muted)';
 
   return (
-    <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none max-w-[1920px] mx-auto">
+    <div
+      className={embedded ? 'px-4 py-4' : 'px-4 py-3 border-b'}
+      style={embedded ? undefined : { borderColor: 'var(--border)' }}
+    >
+      <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none max-w-[1920px] mx-auto">
         <Stat
           label={t('summary.assets')}
           value={`${s.pool}`}

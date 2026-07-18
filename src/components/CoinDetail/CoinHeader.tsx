@@ -2,7 +2,7 @@ import React from 'react';
 import type { CoinData } from '../../context/MarketContext';
 import {
   formatPrice, formatPercent, formatVolume, formatAssetPrice,
-  classifySignal, signalLabel,
+  classifySignal,
 } from '../../utils/formatters';
 import { getChangeColor, getTrendScoreColor } from '../../utils/colors';
 import { TYPE_COLORS } from '../../types/asset';
@@ -19,8 +19,8 @@ export function CoinHeader({ coin, symbol }: CoinHeaderProps) {
   const style = TYPE_COLORS[type];
   const displayName = coin?.baseAsset ?? symbol.replace(/USDT$/, '');
   const subtitle = type === 'crypto'
-    ? 'Binance Spot · Real-time'
-    : coin?.name ?? type;
+    ? t('detail.binanceLive')
+    : coin?.name ?? t(`assetType.${type}`);
 
   return (
     <div
@@ -83,7 +83,7 @@ export function CoinHeader({ coin, symbol }: CoinHeaderProps) {
                   AI
                 </div>
                 <span className={`inline-block font-bold rounded px-2.5 py-1 text-xs ${classifySignal(coin.signal)}`}>
-                  {signalLabel(coin.signal)}
+                  {t(`signal.${coin.signal}`)}
                 </span>
               </div>
             </>

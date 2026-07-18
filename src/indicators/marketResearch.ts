@@ -7,6 +7,9 @@ import { computeSignalAges } from './signalAge';
 import { computeSignalSync, applySyncToSetup } from './signalSync';
 import { getPrimaryAnalysisTf, type MtfTf } from './chartAnalysis';
 import type { Kline } from '../services/binanceApi';
+import { computeMarketSentiment } from './marketSentiment';
+import { computeConfidenceScore } from './confidenceScore';
+import { MIN_CONFIDENCE_SHOW } from './signalConfig';
 
 export type ResearchSignal = 'BUY' | 'SELL' | 'HOLD' | 'NEUTRAL';
 
@@ -43,11 +46,11 @@ function marketBias(ctx: MarketContext): 'bullish' | 'bearish' | 'neutral' {
 }
 
 function countMtfBull(coin: CoinData): number {
-  return [coin.mtf15m, coin.mtf30m, coin.mtf1h, coin.mtf4h].filter(s => s === 'BUY').length;
+  return [coin.mtf1m, coin.mtf5m, coin.mtf15m, coin.mtf30m, coin.mtf1h, coin.mtf4h].filter(s => s === 'BUY').length;
 }
 
 function countMtfBear(coin: CoinData): number {
-  return [coin.mtf15m, coin.mtf30m, coin.mtf1h, coin.mtf4h].filter(s => s === 'SELL').length;
+  return [coin.mtf1m, coin.mtf5m, coin.mtf15m, coin.mtf30m, coin.mtf1h, coin.mtf4h].filter(s => s === 'SELL').length;
 }
 
 export function buildMarketContext(btc: CoinData | undefined, fearGreed: FearGreedData | null): MarketContext {
@@ -159,10 +162,10 @@ export function computeMarketResearch(coin: CoinData, ctx: MarketContext): Resea
   }
 
   if (coin.rsi1h !== null) {
-    if (coin.rsi1h < 30) {
+    if (coin.rsi1h < 25) {
       score += 0.8;
       reasons.push(`RSI oversold (${coin.rsi1h.toFixed(0)}) — geri dönüş potensialı`);
-    } else if (coin.rsi1h > 70) {
+    } else if (coin.rsi1h > 75) {
       score -= 0.8;
       reasons.push(`RSI overbought (${coin.rsi1h.toFixed(0)}) — düzəliş riski`);
     }
@@ -238,6 +241,7 @@ export function enrichCoinWithResearch(
   ctx: MarketContext,
   activeTfs: MtfTf[] = ['15m', '30m', '1h', '4h'],
   klines?: Record<string, Kline[]>,
+  indicatorTf: '1m' | '5m' | '15m' | '1h' | '4h' | '1d' = '1h',
 ): CoinData {
   const withResearch = { ...coin, ...computeMarketResearch(coin, ctx) };
 
@@ -245,19 +249,26 @@ export function enrichCoinWithResearch(
   const primaryK = klines
     ? (klines[primaryTf]?.length >= 20 ? klines[primaryTf] : klines['1h'] || [])
     : [];
-  const haK = klines && activeTfs.includes('15m') && (klines['15m']?.length ?? 0) >= 20
-    ? klines['15m'] : primaryK;
+  // MACD/ST yaşı — yalnız seçilmiş TF (1h fallback yox)
+  const indicatorK = klines && (klines[indicatorTf]?.length ?? 0) >= 20
+    ? klines[indicatorTf]!
+    : [];
+  const haK = indicatorK.length >= 20
+    ? indicatorK
+    : (klines && (klines['15m']?.length ?? 0) >= 20 ? klines['15m']! : primaryK);
 
-  const preAges = klines && primaryK.length >= 15
+  const preAges = klines && indicatorK.length >= 15
     ? computeSignalAges({
         klineMap: klines,
-        primaryKlines: primaryK,
+        primaryKlines: indicatorK,
         haKlines: haK,
         chartSignal: withResearch.chartSignal,
         aiSignal: withResearch.signal,
         setupSignal: 'NEUTRAL',
         zonePosition: withResearch.zonePosition,
         zoneBreakoutSignal: withResearch.zoneBreakoutSignal,
+        mtf1m: withResearch.mtf1m,
+        mtf5m: withResearch.mtf5m,
         mtf15m: withResearch.mtf15m,
         mtf30m: withResearch.mtf30m,
         mtf1h: withResearch.mtf1h,
@@ -267,35 +278,28 @@ export function enrichCoinWithResearch(
     : null;
 
   const sync = computeSignalSync(withResearch, preAges ?? {
-    mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
+    mtf1mCandles: 0, mtf5mCandles: 0, mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
     macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
     chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
   }, activeTfs);
 
-  const setup = computeUnifiedSetup(withResearch, sync);
+  const sentiment = computeMarketSentiment({
+    fearGreed: ctx.fearGreed,
+    btcChange24h: ctx.btcChange24h,
+    btcTrendScore: ctx.btcTrendScore,
+    btcChartSignal: ctx.btcChartSignal,
+  });
+
+  const setup = computeUnifiedSetup(withResearch, sync, {
+    volumeGate: withResearch.volumeGate,
+    rsiBias: withResearch.rsiBias,
+    sentimentScore: sentiment.score,
+  });
   const reversal = computeReversalRisk({ ...withResearch, ...setup });
   const adjusted = applyReversalPenalty(setup.setupSignal, setup.setupConviction, reversal.reversalRisk);
   const synced = applySyncToSetup(adjusted.setupSignal, adjusted.setupConviction, sync);
 
-  const finalAges = preAges && klines
-    ? computeSignalAges({
-        klineMap: klines,
-        primaryKlines: primaryK,
-        haKlines: haK,
-        chartSignal: withResearch.chartSignal,
-        aiSignal: withResearch.signal,
-        setupSignal: synced.setupSignal,
-        zonePosition: withResearch.zonePosition,
-        zoneBreakoutSignal: withResearch.zoneBreakoutSignal,
-        mtf15m: withResearch.mtf15m,
-        mtf30m: withResearch.mtf30m,
-        mtf1h: withResearch.mtf1h,
-        mtf4h: withResearch.mtf4h,
-        activeTfs,
-      })
-    : null;
-
-  return {
+  const afterSetup = {
     ...withResearch,
     setupSignal: synced.setupSignal,
     setupLabel: setupLabelFromSignal(synced.setupSignal),
@@ -314,8 +318,78 @@ export function enrichCoinWithResearch(
     syncLeaderId: sync.syncLeaderId,
     syncLeaderCandles: sync.syncLeaderCandles,
     syncReasons: sync.syncReasons,
+    sentimentScore: sentiment.score,
+    sentimentLabel: sentiment.label,
+  };
+
+  const conf = computeConfidenceScore({
+    coin: afterSetup,
+    rsiAnalysis: {
+      rsi: afterSetup.rsi1h,
+      slope: null,
+      turningUp: afterSetup.rsiBias === 'bullish',
+      turningDown: afterSetup.rsiBias === 'bearish',
+      regime: afterSetup.rsiRegime,
+      bias: afterSetup.rsiBias,
+      quality: afterSetup.rsiQuality,
+      reasons: [],
+    },
+    volume: {
+      buyRatio: afterSetup.volBuyRatios['1h'],
+      volVsSma: null,
+      gate: afterSetup.volumeGate,
+      volumeScore: afterSetup.volumeScore,
+      reason: afterSetup.volumeReason,
+    },
+    sentiment,
+  });
+
+  // Confidence: ≥ MIN_CONFIDENCE_SHOW göstər; əks halda NEUTRAL
+  let finalSetup = synced.setupSignal;
+  let finalLabel = setupLabelFromSignal(synced.setupSignal);
+  if (finalSetup !== 'NEUTRAL') {
+    if (conf.confidence >= MIN_CONFIDENCE_SHOW) {
+      const prefix = finalSetup === 'STRONG_BUY' ? 'S BUY'
+        : finalSetup === 'STRONG_SELL' ? 'S SELL'
+        : finalSetup === 'BUY' ? 'BUY'
+        : finalSetup === 'SELL' ? 'SELL'
+        : finalLabel;
+      finalLabel = `${prefix} ${conf.confidence}%`;
+    } else {
+      finalSetup = 'NEUTRAL';
+      finalLabel = '—';
+    }
+  }
+
+  const finalAges = preAges && klines
+    ? computeSignalAges({
+        klineMap: klines,
+        primaryKlines: indicatorK,
+        haKlines: haK,
+        chartSignal: withResearch.chartSignal,
+        aiSignal: withResearch.signal,
+        setupSignal: finalSetup,
+        zonePosition: withResearch.zonePosition,
+        zoneBreakoutSignal: withResearch.zoneBreakoutSignal,
+        mtf1m: withResearch.mtf1m,
+        mtf5m: withResearch.mtf5m,
+        mtf15m: withResearch.mtf15m,
+        mtf30m: withResearch.mtf30m,
+        mtf1h: withResearch.mtf1h,
+        mtf4h: withResearch.mtf4h,
+        activeTfs,
+      })
+    : null;
+
+  return {
+    ...afterSetup,
+    setupSignal: finalSetup,
+    setupLabel: finalLabel,
+    confidence: conf.confidence,
+    confidenceSide: conf.side,
+    confidenceReasons: conf.reasons,
     ...(finalAges ?? preAges ?? {
-      mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
+      mtf1mCandles: 0, mtf5mCandles: 0, mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
       macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
       chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
     }),
@@ -327,10 +401,11 @@ export function enrichCoinsWithResearch(
   fearGreed: FearGreedData | null,
   activeTfs: MtfTf[] = ['15m', '30m', '1h', '4h'],
   klineCache?: Map<string, Record<string, Kline[]>>,
+  indicatorTf: '1m' | '5m' | '15m' | '1h' | '4h' | '1d' = '1h',
 ): CoinData[] {
   const btc = coins.find(c => c.symbol === 'BTCUSDT');
   const ctx = buildMarketContext(btc, fearGreed);
   return coins.map(coin =>
-    enrichCoinWithResearch(coin, ctx, activeTfs, klineCache?.get(coin.id)),
+    enrichCoinWithResearch(coin, ctx, activeTfs, klineCache?.get(coin.id), indicatorTf),
   );
 }

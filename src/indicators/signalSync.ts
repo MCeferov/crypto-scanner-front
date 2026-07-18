@@ -2,6 +2,7 @@ import type { CoinData } from '../context/MarketContext';
 import type { SignalAges } from './signalAge';
 import type { MtfTf } from './chartAnalysis';
 import type { SetupSignal } from './setupSignal';
+import { RSI_MILD_OS, RSI_MILD_OB } from './signalConfig';
 
 export type SyncStatus = 'STRONG' | 'GOOD' | 'WEAK' | 'MISMATCH';
 
@@ -68,13 +69,15 @@ function collectSignals(coin: CoinData, ages: SignalAges, activeTfs: MtfTf[]): T
   }
 
   if (ages.rsiCandles > 0 && coin.rsi1h !== null) {
-    const bull = coin.rsi1h < 50;
-    out.push({
-      id: 'rsi',
-      label: 'RSI 1H',
-      side: bull ? 'bull' : 'bear',
-      candles: ages.rsiCandles,
-    });
+    // Vahid mild band — 50 midpoint saxta sync yaratmasın
+    if (coin.rsi1h < RSI_MILD_OS || coin.rsi1h > RSI_MILD_OB) {
+      out.push({
+        id: 'rsi',
+        label: 'RSI 1H',
+        side: coin.rsi1h < RSI_MILD_OS ? 'bull' : 'bear',
+        candles: ages.rsiCandles,
+      });
+    }
   }
 
   if (ages.stochCandles > 0 && coin.stochRsiK !== null) {
@@ -88,6 +91,8 @@ function collectSignals(coin: CoinData, ages: SignalAges, activeTfs: MtfTf[]): T
   }
 
   const mtfMap: { tf: MtfTf; dir: typeof coin.mtf15m; candles: number; label: string }[] = [
+    { tf: '1m', dir: coin.mtf1m, candles: ages.mtf1mCandles, label: '1m' },
+    { tf: '5m', dir: coin.mtf5m, candles: ages.mtf5mCandles, label: '5m' },
     { tf: '15m', dir: coin.mtf15m, candles: ages.mtf15mCandles, label: '15m' },
     { tf: '30m', dir: coin.mtf30m, candles: ages.mtf30mCandles, label: '30m' },
     { tf: '1h', dir: coin.mtf1h, candles: ages.mtf1hCandles, label: '1H' },
@@ -304,10 +309,9 @@ export function applySyncToSetup(
   let sig = setupSignal;
 
   if (sync.syncStatus === 'MISMATCH') {
+    // MISMATCH yalnız STRONG endirir — BUY/SELL saxlanılır
     if (sig === 'STRONG_BUY') sig = 'BUY';
-    else if (sig === 'BUY') sig = 'NEUTRAL';
     else if (sig === 'STRONG_SELL') sig = 'SELL';
-    else if (sig === 'SELL') sig = 'NEUTRAL';
   } else if (sync.syncStatus === 'WEAK') {
     if (sig === 'STRONG_BUY') sig = 'BUY';
     else if (sig === 'STRONG_SELL') sig = 'SELL';
@@ -338,6 +342,8 @@ export function leaderWeightMultiplier(voteLabel: string, sync: SignalSyncResult
     research: ['Bazar araşdırması'],
     breakout: ['Zone breakout'],
     zone: ['Zone signal', 'S/D zone'],
+    'mtf-1m': ['1m chart'],
+    'mtf-5m': ['5m chart'],
     'mtf-15m': ['15m chart'],
     'mtf-30m': ['30m chart'],
     'mtf-1h': ['1H chart'],

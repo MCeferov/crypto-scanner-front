@@ -2,15 +2,25 @@ import type { Kline } from '../services/binanceApi';
 import { getLatestRSI } from './rsi';
 import { getLatestMACD } from './macd';
 import { getLatestSuperTrend } from './supertrend';
-import { analyzeHeikinAshi, heikinAshiToKlines } from './heikinAshi';
+import { analyzeHeikinAshi } from './heikinAshi';
+import {
+  RSI_STRONG_OS,
+  RSI_STRONG_OB,
+  RSI_MILD_OS,
+  RSI_MILD_OB,
+  CHART_TF_BUY_SCORE,
+  CHART_TF_STRONG_SCORE,
+} from './signalConfig';
 
 export type TfDir = 'BUY' | 'SELL' | 'NEUTRAL';
 export type ChartSignal = 'BUY' | 'SELL' | 'NEUTRAL';
 
-export const MTF_TIMEFRAMES = ['15m', '30m', '1h', '4h'] as const;
+export const MTF_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h'] as const;
 export type MtfTf = (typeof MTF_TIMEFRAMES)[number];
 
 const TF_WEIGHTS: Record<MtfTf, number> = {
+  '1m': 0.6,
+  '5m': 0.8,
   '15m': 1,
   '30m': 1.5,
   '1h': 2,
@@ -18,6 +28,8 @@ const TF_WEIGHTS: Record<MtfTf, number> = {
 };
 
 const TF_LABELS: Record<MtfTf, string> = {
+  '1m': '1m',
+  '5m': '5m',
   '15m': '15m',
   '30m': '30m',
   '1h': '1H',
@@ -35,30 +47,26 @@ export function analyzeTimeframe(klines: Kline[], tf: MtfTf): TfAnalysis {
   const empty: TfAnalysis = { tf, signal: 'NEUTRAL', score: 0, reasons: [] };
   if (klines.length < 15) return empty;
 
-  const kHa = heikinAshiToKlines(klines);
-  const closes = kHa.map(k => k.close);
+  // Raw closes — cədvəl RSI / digər indikatorlarla eyni bazis (HA yalnız ayrı filtr)
+  const closes = klines.map(k => k.close);
   const rsi = getLatestRSI(closes, 14);
   const macdHist = getLatestMACD(closes)?.histogram ?? null;
-  const st = getLatestSuperTrend(kHa);
+  const st = getLatestSuperTrend(klines);
   const ha = analyzeHeikinAshi(klines);
 
   let score = 0;
   const reasons: string[] = [];
 
-  if (ha.trend === 1) {
-    const pts = ha.consecutive >= 3 ? 3 : ha.consecutive >= 2 ? 2 : 1;
+  // HA: tək töhfə (trend VƏ signal double-count yox)
+  if (ha.signal === 'STRONG_BUY' || (ha.trend === 1 && ha.consecutive >= 2)) {
+    const pts = ha.signal === 'STRONG_BUY' || ha.consecutive >= 3 ? 2.5 : 1.5;
     score += pts;
     reasons.push(`HA ▲${ha.consecutive}`);
-  } else if (ha.trend === -1) {
-    const pts = ha.consecutive >= 3 ? 3 : ha.consecutive >= 2 ? 2 : 1;
+  } else if (ha.signal === 'STRONG_SELL' || (ha.trend === -1 && ha.consecutive >= 2)) {
+    const pts = ha.signal === 'STRONG_SELL' || ha.consecutive >= 3 ? 2.5 : 1.5;
     score -= pts;
     reasons.push(`HA ▼${ha.consecutive}`);
   }
-
-  if (ha.signal === 'STRONG_BUY') { score += 3; reasons.push('HA strong buy'); }
-  else if (ha.signal === 'BUY') { score += 2; reasons.push('HA buy'); }
-  else if (ha.signal === 'STRONG_SELL') { score -= 3; reasons.push('HA strong sell'); }
-  else if (ha.signal === 'SELL') { score -= 2; reasons.push('HA sell'); }
 
   if (st?.trend === 1) { score += 2; reasons.push('SuperTrend bull'); }
   else if (st?.trend === -1) { score -= 2; reasons.push('SuperTrend bear'); }
@@ -69,24 +77,24 @@ export function analyzeTimeframe(klines: Kline[], tf: MtfTf): TfAnalysis {
   }
 
   if (rsi !== null) {
-    if (rsi < 32) { score += 1.5; reasons.push(`RSI ${rsi.toFixed(0)} oversold`); }
-    else if (rsi < 42) { score += 0.5; }
-    else if (rsi > 68) { score -= 1.5; reasons.push(`RSI ${rsi.toFixed(0)} overbought`); }
-    else if (rsi > 58) { score -= 0.5; }
-    else if (rsi >= 48 && rsi <= 62 && ha.trend === 1) { score += 0.5; }
-    else if (rsi >= 38 && rsi <= 52 && ha.trend === -1) { score -= 0.5; }
+    if (rsi < RSI_STRONG_OS) { score += 1.5; reasons.push(`RSI ${rsi.toFixed(0)} OS`); }
+    else if (rsi < RSI_MILD_OS) { score += 0.5; }
+    else if (rsi > RSI_STRONG_OB) { score -= 1.5; reasons.push(`RSI ${rsi.toFixed(0)} OB`); }
+    else if (rsi > RSI_MILD_OB) { score -= 0.5; }
   }
 
   let signal: TfDir = 'NEUTRAL';
-  if (score >= 2.5) signal = 'BUY';
-  else if (score <= -2.5) signal = 'SELL';
-  else if (score >= 1.2) signal = 'BUY';
-  else if (score <= -1.2) signal = 'SELL';
+  if (score >= CHART_TF_STRONG_SCORE) signal = 'BUY';
+  else if (score <= -CHART_TF_STRONG_SCORE) signal = 'SELL';
+  else if (score >= CHART_TF_BUY_SCORE) signal = 'BUY';
+  else if (score <= -CHART_TF_BUY_SCORE) signal = 'SELL';
 
   return { tf, signal, score, reasons };
 }
 
 export interface MtfAnalysisResult {
+  mtf1m: TfDir;
+  mtf5m: TfDir;
   mtf15m: TfDir;
   mtf30m: TfDir;
   mtf1h: TfDir;
@@ -96,7 +104,7 @@ export interface MtfAnalysisResult {
 }
 
 export function getPrimaryAnalysisTf(activeTfs: MtfTf[]): MtfTf {
-  const order: MtfTf[] = ['4h', '1h', '30m', '15m'];
+  const order: MtfTf[] = ['4h', '1h', '30m', '15m', '5m', '1m'];
   for (const tf of order) {
     if (activeTfs.includes(tf)) return tf;
   }
@@ -159,10 +167,12 @@ export function computeMultiTimeframeAnalysis(
   );
 
   return {
-    mtf15m: analyses[0].signal,
-    mtf30m: analyses[1].signal,
-    mtf1h: analyses[2].signal,
-    mtf4h: analyses[3].signal,
+    mtf1m: analyses[0].signal,
+    mtf5m: analyses[1].signal,
+    mtf15m: analyses[2].signal,
+    mtf30m: analyses[3].signal,
+    mtf1h: analyses[4].signal,
+    mtf4h: analyses[5].signal,
     chartSignal,
     chartSignalReasons,
   };

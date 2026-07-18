@@ -24,7 +24,7 @@ export const RSICell = React.memo(function RSICell({ value, loaded }: RSICellPro
     );
   }
 
-  const label = value < 30 ? 'OS' : value > 70 ? 'OB' : '';
+  const label = value < 25 ? 'OS' : value > 75 ? 'OB' : '';
 
   return (
     <td className="px-2 py-2 text-center" style={{ minWidth: 60 }}>

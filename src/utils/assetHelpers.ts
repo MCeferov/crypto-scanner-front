@@ -19,7 +19,7 @@ export interface AssetRowBase {
 }
 
 const EMPTY_INDICATORS = {
-  rsi15m: null, rsi1h: null, rsi4h: null, rsi1d: null,
+  rsi1m: null, rsi5m: null, rsi15m: null, rsi1h: null, rsi4h: null, rsi1d: null,
   macd: null, macdSignal: null, macdHistogram: null,
   bbUpper: null, bbMiddle: null, bbLower: null, bbPercent: null,
   atr: null, atrPercent: null,
@@ -28,15 +28,17 @@ const EMPTY_INDICATORS = {
   trendScore: 50, signal: 'NEUTRAL' as const, signalReasons: [] as string[],
   zonePosition: null, zoneSignal: 'ZONE_NEUTRAL' as const, zoneBreakoutSignal: 'NEUTRAL' as const,
   zoneBreakoutReasons: [] as string[], zoneSignalReasons: [] as string[],
+  demandZonePrice: null as number | null, supplyZonePrice: null as number | null,
   stopLoss: null, takeProfit: null, riskReward: null,
   haTrend: 0 as const, haConsecutive: 0, haSignal: 'NEUTRAL' as const, haReasons: [] as string[],
   setupSignal: 'NEUTRAL' as const, setupLabel: '—', setupReasons: [] as string[], setupConviction: 0,
+  mtf1m: 'NEUTRAL' as const, mtf5m: 'NEUTRAL' as const,
   mtf15m: 'NEUTRAL' as const, mtf30m: 'NEUTRAL' as const, mtf1h: 'NEUTRAL' as const, mtf4h: 'NEUTRAL' as const,
   chartSignal: 'NEUTRAL' as const, chartSignalReasons: [] as string[],
   researchSignal: 'NEUTRAL' as const, researchLabel: '—', researchScore: 0, researchReasons: [] as string[],
   reversalRisk: 'NONE' as const, reversalReasons: [] as string[], mtfAlignment: 'MIXED' as const, riskRewardNote: '',
   primaryAnalysisTf: '1h' as const,
-  mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
+  mtf1mCandles: 0, mtf5mCandles: 0, mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
   macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
   chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
   syncStatus: 'WEAK' as const, syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [] as string[],

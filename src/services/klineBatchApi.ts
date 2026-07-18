@@ -2,8 +2,10 @@ import type { Kline } from './binanceApi';
 import type { AssetType } from '../types/asset';
 import { ESSENTIAL_TIMEFRAMES, EXTRA_TIMEFRAMES } from './binanceApi';
 
-/** Cədvəl və qrafik eyni indikator hesabı üçün eyni mum sayı */
-export const INDICATOR_KLINE_LIMIT = 200;
+/** Cədvəl indikator hesabı — MACD EMA üçün detail ilə eyni uzunluqda tarixçə */
+export const INDICATOR_KLINE_LIMIT = 1000;
+/** Detail qrafik — mümkün qədər uzun tarixçə (Binance max ~1000/sorğu, pagination ilə daha çox) */
+export const CHART_KLINE_LIMIT = 3000;
 
 export interface KlineAssetRef {
   id: string;

@@ -7,6 +7,7 @@ import { TradingChart } from '../components/Chart/TradingChart';
 import { CoinHeader } from '../components/CoinDetail/CoinHeader';
 import { AIAnalysisPanel } from '../components/CoinDetail/AIAnalysisPanel';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { LanguageSwitcher } from '../components/Controls/LanguageSwitcher';
 import { analyzeFromCoin } from '../services/aiAnalysis';
 import { batchKlinesFromServer, toKlineAssetRef } from '../services/klineBatchApi';
 import type { Kline } from '../services/binanceApi';
@@ -20,7 +21,7 @@ export function AssetDetailPage() {
 
   const type = (params?.type ?? '') as AssetType;
   const symbol = params?.symbol?.toUpperCase() ?? '';
-  const initialTimeframe = visibleRsiCols[0] ?? '1h';
+  const initialTimeframe = visibleRsiCols[0] ?? '1m';
 
   const asset = useMemo(
     () => coins.find(c => c.type === type && c.baseAsset.toUpperCase() === symbol) ?? null,
@@ -35,7 +36,7 @@ export function AssetDetailPage() {
   useEffect(() => {
     if (!asset || asset.type === 'crypto') return;
     const ref = toKlineAssetRef(asset);
-    void batchKlinesFromServer([ref], ['15m', '1h', '4h'], true).then(map => {
+    void batchKlinesFromServer([ref], ['1m', '5m', '15m', '1h', '4h'], true).then(map => {
       const klines = map.get(asset.id);
       if (klines) syncAssetKlines(asset.id, klines);
     }).catch(() => {});
@@ -43,8 +44,8 @@ export function AssetDetailPage() {
 
   const analysis = useMemo(() => {
     if (!asset || !asset.indicatorsLoaded) return null;
-    return analyzeFromCoin(asset);
-  }, [asset]);
+    return analyzeFromCoin(asset, t);
+  }, [asset, t]);
 
   useEffect(() => {
     if (type === 'crypto' && symbol) {
@@ -79,7 +80,10 @@ export function AssetDetailPage() {
           <ArrowLeft size={14} />
           {t('detail.back')}
         </button>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+          <ThemeToggle />
+        </div>
       </div>
 
       <CoinHeader coin={asset} symbol={chartSymbol} />

@@ -1,3 +1,4 @@
+import type { TranslateFn } from '@workspace/i18n';
 import type { CoinData } from '../context/MarketContext';
 import type { Kline } from './binanceApi';
 import type { Signal } from '../indicators/aiSignal';
@@ -34,24 +35,36 @@ function biasFromRSI(rsi: number | null): 'bullish' | 'bearish' | 'neutral' {
   return 'neutral';
 }
 
-function buildSummary(signal: Signal, bullish: number, bearish: number, trendStrength: number): string {
-  const net = bullish - bearish;
-  if (signal === 'STRONG_BUY') {
-    return `Strong bullish momentum detected. Multiple indicators align for upside with ${trendStrength}% trend strength.`;
-  }
-  if (signal === 'BUY') {
-    return `Bullish bias with score +${net}. Trend strength at ${trendStrength}% suggests upward pressure.`;
-  }
-  if (signal === 'STRONG_SELL') {
-    return `Strong bearish pressure. Indicators converge on downside risk with ${trendStrength}% trend strength.`;
-  }
-  if (signal === 'SELL') {
-    return `Bearish bias with score ${net}. Trend strength ${trendStrength}% favors sellers.`;
-  }
-  return `Mixed signals — bullish ${bullish} vs bearish ${bearish}. Market in consolidation, await clearer direction.`;
+function biasLabel(t: TranslateFn, bias: 'bullish' | 'bearish' | 'neutral'): string {
+  if (bias === 'bullish') return t('detail.biasBullish');
+  if (bias === 'bearish') return t('detail.biasBearish');
+  return '—';
 }
 
-export function analyzeFromCoin(coin: CoinData): AIAnalysisResult {
+function buildSummary(
+  t: TranslateFn,
+  signal: Signal,
+  bullish: number,
+  bearish: number,
+  trendStrength: number,
+): string {
+  const net = bullish - bearish;
+  if (signal === 'STRONG_BUY') {
+    return t('detail.summaryStrongBuy', { strength: trendStrength });
+  }
+  if (signal === 'BUY') {
+    return t('detail.summaryBuy', { net, strength: trendStrength });
+  }
+  if (signal === 'STRONG_SELL') {
+    return t('detail.summaryStrongSell', { strength: trendStrength });
+  }
+  if (signal === 'SELL') {
+    return t('detail.summarySell', { net, strength: trendStrength });
+  }
+  return t('detail.summaryNeutral', { bullish, bearish });
+}
+
+export function analyzeFromCoin(coin: CoinData, t: TranslateFn): AIAnalysisResult {
   const signalResult = computeSignal({
     rsi15m: coin.rsi15m,
     rsi1h: coin.rsi1h,
@@ -69,60 +82,75 @@ export function analyzeFromCoin(coin: CoinData): AIAnalysisResult {
   const bearishScore = Math.min(100, Math.round((signalResult.bearishCount / 8) * 100));
   const trendStrength = coin.trendScore;
 
+  const macdBias = coin.macdHistogram === null
+    ? 'neutral' as const
+    : coin.macdHistogram > 0 ? 'bullish' as const : 'bearish' as const;
+  const stBias = coin.superTrend === 1
+    ? 'bullish' as const
+    : coin.superTrend === -1 ? 'bearish' as const : 'neutral' as const;
+
+  const zoneValue = coin.zonePosition === 'at_demand'
+    ? t('detail.zoneDemand')
+    : coin.zonePosition === 'at_supply'
+      ? t('detail.zoneSupply')
+      : '—';
+
   const indicatorSummary: IndicatorSummaryItem[] = [
     {
-      name: 'RSI (1H)',
+      name: t('detail.indRsi1h'),
       value: coin.rsi1h !== null ? coin.rsi1h.toFixed(1) : '—',
       bias: biasFromRSI(coin.rsi1h),
     },
     {
-      name: 'MACD',
-      value: coin.macdHistogram !== null ? (coin.macdHistogram > 0 ? 'Bullish' : 'Bearish') : '—',
-      bias: coin.macdHistogram === null ? 'neutral' : coin.macdHistogram > 0 ? 'bullish' : 'bearish',
+      name: t('detail.indMacd'),
+      value: macdBias === 'neutral' ? '—' : biasLabel(t, macdBias),
+      bias: macdBias,
     },
     {
-      name: 'Volume 24h',
-      value: coin.volume24h >= 1e9 ? `$${(coin.volume24h / 1e9).toFixed(2)}B` : `$${(coin.volume24h / 1e6).toFixed(1)}M`,
+      name: t('detail.indVolume'),
+      value: coin.volume24h >= 1e9
+        ? `$${(coin.volume24h / 1e9).toFixed(2)}B`
+        : coin.volume24h >= 1e6
+          ? `$${(coin.volume24h / 1e6).toFixed(1)}M`
+          : `$${coin.volume24h.toFixed(0)}`,
       bias: 'neutral',
     },
     {
-      name: 'Stoch RSI',
+      name: t('detail.indStoch'),
       value: coin.stochRsiK !== null ? `K ${coin.stochRsiK.toFixed(1)}` : '—',
       bias: coin.stochRsiK === null ? 'neutral' : coin.stochRsiK < 15 ? 'bullish' : coin.stochRsiK > 85 ? 'bearish' : 'neutral',
     },
     {
-      name: 'SuperTrend',
-      value: coin.superTrend === 1 ? 'Bullish' : coin.superTrend === -1 ? 'Bearish' : '—',
-      bias: coin.superTrend === 1 ? 'bullish' : coin.superTrend === -1 ? 'bearish' : 'neutral',
+      name: t('detail.indSt'),
+      value: stBias === 'neutral' ? '—' : biasLabel(t, stBias),
+      bias: stBias,
     },
     {
-      name: 'Bollinger %B',
-      value: coin.bbPercent !== null ? `${(coin.bbPercent * 100).toFixed(0)}%` : '—',
-      bias: coin.bbPercent === null ? 'neutral' : coin.bbPercent < 0.15 ? 'bullish' : coin.bbPercent > 0.85 ? 'bearish' : 'neutral',
-    },
-    {
-      name: 'S/D Zone',
-      value: coin.zonePosition === 'at_demand' ? 'Demand' : coin.zonePosition === 'at_supply' ? 'Supply' : '—',
+      name: t('detail.indZone'),
+      value: zoneValue,
       bias: coin.zonePosition === 'at_demand' ? 'bullish' : coin.zonePosition === 'at_supply' ? 'bearish' : 'neutral',
     },
     {
-      name: 'Zone Signal',
-      value: coin.zoneSignal !== 'ZONE_NEUTRAL' ? coin.zoneSignal.replace('ZONE_', '') : '—',
+      name: t('detail.indZoneSignal'),
+      value: coin.zoneSignal !== 'ZONE_NEUTRAL'
+        ? (t(`signal.${coin.zoneSignal}`) !== `signal.${coin.zoneSignal}`
+          ? t(`signal.${coin.zoneSignal}`)
+          : coin.zoneSignal.replace('ZONE_', ''))
+        : '—',
       bias: coin.zoneSignal.includes('BUY') ? 'bullish' : coin.zoneSignal.includes('SELL') ? 'bearish' : 'neutral',
     },
     {
-      name: 'Heikin Ashi',
+      name: t('detail.indHa'),
       value: coin.haTrend === 1 ? `▲${coin.haConsecutive}` : coin.haTrend === -1 ? `▼${coin.haConsecutive}` : '—',
       bias: coin.haTrend === 1 ? 'bullish' : coin.haTrend === -1 ? 'bearish' : 'neutral',
     },
     {
-      name: 'Setup',
+      name: t('detail.indSetup'),
       value: coin.setupLabel,
       bias: coin.setupSignal.includes('BUY') ? 'bullish' : coin.setupSignal.includes('SELL') ? 'bearish' : 'neutral',
     },
-
     {
-      name: 'SL / TP',
+      name: t('detail.indSlTp'),
       value: coin.stopLoss && coin.takeProfit
         ? `${coin.stopLoss.toFixed(4)} / ${coin.takeProfit.toFixed(4)}`
         : '—',
@@ -140,14 +168,18 @@ export function analyzeFromCoin(coin: CoinData): AIAnalysisResult {
     bullishScore,
     bearishScore,
     trendStrength,
-    summary: buildSummary(signalResult.signal, bullishScore, bearishScore, trendStrength),
+    summary: buildSummary(t, signalResult.signal, bullishScore, bearishScore, trendStrength),
     reasons,
     indicatorSummary,
   };
 }
 
-export function analyzeFromKlines(klines: Kline[], price: number, change24h: number): AIAnalysisResult {
-  // XAM (raw) qiymət bazisi — detail qrafiki ilə eyni, indikatorlar arası sinxron
+export function analyzeFromKlines(
+  klines: Kline[],
+  price: number,
+  change24h: number,
+  t: TranslateFn,
+): AIAnalysisResult {
   const closes = klines.map(k => k.close);
   const rsi1h = getLatestRSI(closes, 14);
   const macd = getLatestMACD(closes);
@@ -168,8 +200,8 @@ export function analyzeFromKlines(klines: Kline[], price: number, change24h: num
   const coin: CoinData = {
     id: 'crypto:ANALYSIS', name: 'Analysis', type: 'crypto', marketCap: null,
     symbol: '', baseAsset: '', price, priceChange1h: 0, priceChange24h: change24h,
-    volume24h: 0, volBuyRatios: { '15m': null, '1h': null, '4h': null, '1d': null },
-    rsi15m: null, rsi1h, rsi4h: null, rsi1d: null,
+    volume24h: 0, volBuyRatios: { '1m': null, '5m': null, '15m': null, '1h': null, '4h': null, '1d': null },
+    rsi1m: null, rsi5m: null, rsi15m: null, rsi1h, rsi4h: null, rsi1d: null,
     macd: macd?.macd ?? null, macdSignal: macd?.signal ?? null, macdHistogram: macd?.histogram ?? null,
     bbUpper: bb?.upper ?? null, bbMiddle: bb?.middle ?? null, bbLower: bb?.lower ?? null,
     bbPercent: bb?.percentB ?? null, atr, atrPercent,
@@ -178,21 +210,26 @@ export function analyzeFromKlines(klines: Kline[], price: number, change24h: num
     trendScore, signal: 'NEUTRAL', signalReasons: [],
     zonePosition: null, zoneSignal: 'ZONE_NEUTRAL', zoneBreakoutSignal: 'NEUTRAL',
     zoneBreakoutReasons: [], zoneSignalReasons: [],
+    demandZonePrice: null, supplyZonePrice: null,
     stopLoss: null, takeProfit: null, riskReward: null,
     haTrend: haResult.trend, haConsecutive: haResult.consecutive,
     haSignal: haResult.signal, haReasons: haResult.reasons,
     setupSignal: 'NEUTRAL', setupLabel: '—', setupReasons: [], setupConviction: 0,
-    mtf15m: 'NEUTRAL', mtf30m: 'NEUTRAL', mtf1h: 'NEUTRAL', mtf4h: 'NEUTRAL',
+    mtf1m: 'NEUTRAL', mtf5m: 'NEUTRAL', mtf15m: 'NEUTRAL', mtf30m: 'NEUTRAL', mtf1h: 'NEUTRAL', mtf4h: 'NEUTRAL',
     chartSignal: 'NEUTRAL', chartSignalReasons: [],
     researchSignal: 'NEUTRAL', researchLabel: '—', researchScore: 0, researchReasons: [],
     reversalRisk: 'NONE', reversalReasons: [], mtfAlignment: 'MIXED', riskRewardNote: '',
     primaryAnalysisTf: '1h',
-    mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
+    mtf1mCandles: 0, mtf5mCandles: 0, mtf15mCandles: 0, mtf30mCandles: 0, mtf1hCandles: 0, mtf4hCandles: 0,
     macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
     chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
     syncStatus: 'WEAK' as const, syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [],
+    volumeGate: 'neutral', volumeScore: 50, volumeReason: '',
+    rsiBias: 'neutral', rsiQuality: 0, rsiRegime: 'range',
+    sentimentScore: 0, sentimentLabel: 'Neytral',
+    confidence: 0, confidenceSide: 'NONE', confidenceReasons: [],
     indicatorsLoaded: true,
   };
 
-  return analyzeFromCoin(coin);
+  return analyzeFromCoin(coin, t);
 }

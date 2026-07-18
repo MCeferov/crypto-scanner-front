@@ -6,7 +6,7 @@ import { CandleAge } from './CandleAge';
 import {
   formatPrice, formatPercent, formatAssetPrice,
   classifySignal, classifyZoneBreakout, classifyHaTrend,
-  zoneBreakoutLabel, zonePositionLabel, haTrendLabel,
+  zoneBreakoutLabel, haTrendLabel,
   mtfDirShort, classifyMtfDir, chartSignalLabel, classifyResearchSignal,
 } from '../../utils/formatters';
 import { TYPE_COLORS } from '../../types/asset';
@@ -16,14 +16,16 @@ import { getTrendScoreColor } from '../../utils/colors';
 import { classifyVolume } from '../../indicators/volumeConfirmation';
 
 const MTF_COLS: { id: string; key: keyof CoinData; ageKey: keyof CoinData; label: string; tf: AnalysisTf }[] = [
-  { id: 'mtf15', key: 'mtf15m', ageKey: 'mtf15mCandles', label: '15m', tf: '15m' },
-  { id: 'mtf30', key: 'mtf30m', ageKey: 'mtf30mCandles', label: '30m', tf: '30m' },
-  { id: 'mtf1h', key: 'mtf1h',  ageKey: 'mtf1hCandles',  label: '1H',  tf: '1h' },
-  { id: 'mtf4h', key: 'mtf4h',  ageKey: 'mtf4hCandles',  label: '4H',  tf: '4h' },
+  { id: 'mtf1m',  key: 'mtf1m',  ageKey: 'mtf1mCandles',  label: '1m',  tf: '1m' },
+  { id: 'mtf5m',  key: 'mtf5m',  ageKey: 'mtf5mCandles',  label: '5m',  tf: '5m' },
+  { id: 'mtf15',  key: 'mtf15m', ageKey: 'mtf15mCandles', label: '15m', tf: '15m' },
+  { id: 'mtf30',  key: 'mtf30m', ageKey: 'mtf30mCandles', label: '30m', tf: '30m' },
+  { id: 'mtf1h',  key: 'mtf1h',  ageKey: 'mtf1hCandles',  label: '1H',  tf: '1h' },
+  { id: 'mtf4h',  key: 'mtf4h',  ageKey: 'mtf4hCandles',  label: '4H',  tf: '4h' },
 ];
 
 const RSI_KEY: Record<RsiTf, keyof CoinData> = {
-  '15m': 'rsi15m', '1h': 'rsi1h', '4h': 'rsi4h', '1d': 'rsi1d',
+  '1m': 'rsi1m', '5m': 'rsi5m', '15m': 'rsi15m', '1h': 'rsi1h', '4h': 'rsi4h', '1d': 'rsi1d',
 };
 
 interface HeatmapRowProps {
@@ -43,7 +45,9 @@ function SkeletonCell({ w = 40 }: { w?: number }) {
   );
 }
 
-function VolumeConfirmCell({ colId, coin, loaded, activeRsiTf, t }: {
+function VolumeConfirmCell({
+  colId, coin, loaded, activeRsiTf, t,
+}: {
   colId: string;
   coin: CoinData;
   loaded: boolean;
@@ -53,18 +57,18 @@ function VolumeConfirmCell({ colId, coin, loaded, activeRsiTf, t }: {
   if (!loaded) return <SkeletonCell key={colId} w={44} />;
 
   const rsiValue = coin[RSI_KEY[activeRsiTf]] as number | null;
-  const { status: volumeConfirm, reason: volumeConfirmReason } = classifyVolume(
+  const { status, reason } = classifyVolume(
     activeRsiTf,
     rsiValue,
     coin.volBuyRatios[activeRsiTf],
   );
 
-  if (volumeConfirm === 'neutral') {
+  if (status === 'neutral') {
     return (
       <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 76 }}>
         <span
           className="inline-block rounded px-2 py-0.5 text-[10px] font-semibold"
-          title={volumeConfirmReason}
+          title={reason}
           style={{ color: 'var(--muted)', background: 'var(--elevated)', border: '1px solid var(--border)' }}
         >
           {t('table.volumeNeutral')}
@@ -73,12 +77,12 @@ function VolumeConfirmCell({ colId, coin, loaded, activeRsiTf, t }: {
     );
   }
 
-  if (volumeConfirm === 'nodata') {
+  if (status === 'nodata') {
     return (
       <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 76 }}>
         <span
           className="inline-block rounded px-2 py-0.5 text-[10px] font-bold"
-          title={volumeConfirmReason}
+          title={reason}
           style={{
             color: '#f0b90b',
             background: 'rgba(240,185,11,.08)',
@@ -91,12 +95,12 @@ function VolumeConfirmCell({ colId, coin, loaded, activeRsiTf, t }: {
     );
   }
 
-  const real = volumeConfirm === 'real';
+  const real = status === 'real';
   return (
     <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 76 }}>
       <span
         className="inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap"
-        title={volumeConfirmReason}
+        title={reason}
         style={{
           color: real ? '#26a69a' : '#ef5350',
           background: real ? 'rgba(38,166,154,.12)' : 'rgba(239,83,80,.12)',
@@ -119,7 +123,7 @@ export const HeatmapRow = memo(function HeatmapRow({
   const flashClass = coin.flashUp ? 'flash-up' : coin.flashDown ? 'flash-down' : '';
   const loaded = coin.indicatorsLoaded;
   const typeStyle = TYPE_COLORS[coin.type];
-  const activeRsiTf = (visibleColIds.find(id => id.startsWith('rsi-'))?.slice(4) as RsiTf) ?? '1h';
+  const activeRsiTf = (visibleColIds.find(id => id.startsWith('rsi-'))?.slice(4) as RsiTf) ?? '1m';
 
   const handleClick = () => {
     if (isCryptoAsset(coin)) {
@@ -141,7 +145,6 @@ export const HeatmapRow = memo(function HeatmapRow({
     ...coin.reversalReasons,
     '---',
     ...coin.setupReasons,
-    coin.riskReward !== null ? `---\n${coin.riskRewardNote}` : '',
   ].filter(Boolean).join('\n');
 
   const renderCell = useCallback((colId: string): React.ReactNode => {
@@ -241,17 +244,6 @@ export const HeatmapRow = memo(function HeatmapRow({
           </td>
         );
 
-      case 'bb':
-        return !loaded ? <SkeletonCell key={colId} w={32} /> : (
-          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 52 }}>
-            {coin.bbPercent !== null ? (
-              <span className="font-mono text-[11px]" style={{
-                color: coin.bbPercent > 0.8 ? '#ef5350' : coin.bbPercent < 0.2 ? '#26a69a' : 'var(--muted)',
-              }}>{(coin.bbPercent * 100).toFixed(0)}%</span>
-            ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
-          </td>
-        );
-
       case 'trend':
         return !loaded ? <SkeletonCell key={colId} w={56} /> : (
           <td key={colId} className="px-3 py-2" style={{ minWidth: 80 }}>
@@ -341,25 +333,25 @@ export const HeatmapRow = memo(function HeatmapRow({
         );
 
       case 'zone':
-        return !loaded ? <SkeletonCell key={colId} w={28} /> : (
-          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 44 }}>
-            <span className="inline-block font-bold rounded px-1.5 py-0.5 text-[10px]"
-              title={coin.zoneSignalReasons.join(' · ') || 'No zone data'}
-              style={{
-                color: coin.zonePosition === 'at_demand' || coin.zonePosition === 'near_demand' ? '#26a69a'
-                  : coin.zonePosition === 'at_supply' || coin.zonePosition === 'near_supply' ? '#ef5350'
-                  : coin.zonePosition === 'between' ? '#f0b90b' : 'var(--dim)',
-                background: coin.zonePosition === 'at_demand' || coin.zonePosition === 'near_demand' ? 'rgba(38,166,154,.10)'
-                  : coin.zonePosition === 'at_supply' || coin.zonePosition === 'near_supply' ? 'rgba(239,83,80,.10)'
-                  : coin.zonePosition === 'between' ? 'rgba(240,185,11,.08)' : 'transparent',
-                border: `1px solid ${
-                  coin.zonePosition === 'at_demand' || coin.zonePosition === 'near_demand' ? 'rgba(38,166,154,.25)'
-                  : coin.zonePosition === 'at_supply' || coin.zonePosition === 'near_supply' ? 'rgba(239,83,80,.25)'
-                  : coin.zonePosition === 'between' ? 'rgba(240,185,11,.25)' : 'var(--border)'}`,
-              }}>
-              {zonePositionLabel(coin.zonePosition)}
+        return !loaded ? <SkeletonCell key={colId} w={72} /> : (
+          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 88 }}>
+            <div className="flex flex-col items-center gap-0.5 leading-tight" title={coin.zoneSignalReasons.join('\n')}>
+              {coin.demandZonePrice !== null ? (
+                <span className="font-mono text-[10px] font-semibold" style={{ color: '#26a69a' }}>
+                  D {formatPrice(coin.demandZonePrice)}
+                </span>
+              ) : (
+                <span className="text-[10px]" style={{ color: 'var(--dim)' }}>D —</span>
+              )}
+              {coin.supplyZonePrice !== null ? (
+                <span className="font-mono text-[10px] font-semibold" style={{ color: '#ef5350' }}>
+                  S {formatPrice(coin.supplyZonePrice)}
+                </span>
+              ) : (
+                <span className="text-[10px]" style={{ color: 'var(--dim)' }}>S —</span>
+              )}
               <CandleAge candles={coin.zoneCandles} />
-            </span>
+            </div>
           </td>
         );
 
@@ -379,7 +371,11 @@ export const HeatmapRow = memo(function HeatmapRow({
       case 'sl':
         return !loaded ? <SkeletonCell key={colId} w={52} /> : (
           <td key={colId} className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
-            <span className="font-mono text-[11px]" style={{ color: coin.stopLoss ? '#ef5350' : 'var(--dim)' }}>
+            <span
+              className="font-mono text-[11px]"
+              style={{ color: coin.stopLoss ? '#ef5350' : 'var(--dim)' }}
+              title={coin.riskRewardNote || 'SL = demand/supply zona + ATR buffer'}
+            >
               {coin.stopLoss ? `$${formatPrice(coin.stopLoss)}` : '—'}
             </span>
           </td>
@@ -388,22 +384,12 @@ export const HeatmapRow = memo(function HeatmapRow({
       case 'tp':
         return !loaded ? <SkeletonCell key={colId} w={52} /> : (
           <td key={colId} className="px-2 py-2 text-right" style={{ minWidth: 72 }}>
-            <span className="font-mono text-[11px]" style={{ color: coin.takeProfit ? '#26a69a' : 'var(--dim)' }}>
-              {coin.takeProfit ? `$${formatPrice(coin.takeProfit)}` : '—'}
-            </span>
-          </td>
-        );
-
-      case 'rr':
-        return !loaded ? <SkeletonCell key={colId} w={32} /> : (
-          <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 44 }}>
-            <span className="font-mono text-[11px]" style={{
-              color: coin.riskReward && coin.riskReward >= 2 ? '#26a69a'
-                : coin.riskReward && coin.riskReward >= 1.5 ? '#f0b90b' : 'var(--dim)',
-            }}
-              title={coin.riskRewardNote || undefined}
+            <span
+              className="font-mono text-[11px]"
+              style={{ color: coin.takeProfit ? '#26a69a' : 'var(--dim)' }}
+              title={coin.riskRewardNote || 'TP = əks zona və ya 2.5×ATR'}
             >
-              {coin.riskReward !== null ? `${coin.riskReward.toFixed(1)}` : '—'}
+              {coin.takeProfit ? `$${formatPrice(coin.takeProfit)}` : '—'}
             </span>
           </td>
         );
@@ -414,14 +400,15 @@ export const HeatmapRow = memo(function HeatmapRow({
             {coin.setupSignal !== 'NEUTRAL' ? (
               <span
                 className={`inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap ${classifySignal(coin.setupSignal)}`}
-                title={setupTooltip}
+                title={[
+                  coin.confidence > 0 ? `Confidence: ${coin.confidence}%` : '',
+                  ...coin.confidenceReasons.slice(0, 4),
+                  setupTooltip,
+                ].filter(Boolean).join('\n')}
               >
                 {coin.reversalRisk === 'HIGH' && <span className="mr-0.5">⚠</span>}
                 {coin.setupLabel}
                 <CandleAge candles={coin.setupCandles} />
-                {coin.setupConviction > 0 && (
-                  <span className="opacity-60 ml-1">{coin.setupConviction}</span>
-                )}
               </span>
             ) : <span className="text-xs" style={{ color: 'var(--dim)' }}>—</span>}
           </td>
@@ -450,21 +437,20 @@ export const HeatmapRow = memo(function HeatmapRow({
   prev.coin.priceChange24h === next.coin.priceChange24h &&
   prev.coin.name === next.coin.name &&
   prev.coin.type === next.coin.type &&
+  prev.coin.rsi1m === next.coin.rsi1m &&
+  prev.coin.rsi5m === next.coin.rsi5m &&
   prev.coin.rsi15m === next.coin.rsi15m &&
   prev.coin.rsi1h === next.coin.rsi1h &&
   prev.coin.rsi4h === next.coin.rsi4h &&
   prev.coin.rsi1d === next.coin.rsi1d &&
   prev.coin.macdHistogram === next.coin.macdHistogram &&
   prev.coin.volume24h === next.coin.volume24h &&
-  prev.coin.volBuyRatios['15m'] === next.coin.volBuyRatios['15m'] &&
-  prev.coin.volBuyRatios['1h'] === next.coin.volBuyRatios['1h'] &&
-  prev.coin.volBuyRatios['4h'] === next.coin.volBuyRatios['4h'] &&
-  prev.coin.volBuyRatios['1d'] === next.coin.volBuyRatios['1d'] &&
   prev.coin.atrPercent === next.coin.atrPercent &&
   prev.coin.stochRsiK === next.coin.stochRsiK &&
-  prev.coin.bbPercent === next.coin.bbPercent &&
   prev.coin.indicatorsLoaded === next.coin.indicatorsLoaded &&
   prev.coin.trendScore === next.coin.trendScore &&
+  prev.coin.mtf1m === next.coin.mtf1m &&
+  prev.coin.mtf5m === next.coin.mtf5m &&
   prev.coin.mtf15m === next.coin.mtf15m &&
   prev.coin.mtf30m === next.coin.mtf30m &&
   prev.coin.mtf1h === next.coin.mtf1h &&
@@ -475,12 +461,22 @@ export const HeatmapRow = memo(function HeatmapRow({
   prev.coin.haTrend === next.coin.haTrend &&
   prev.coin.haConsecutive === next.coin.haConsecutive &&
   prev.coin.setupSignal === next.coin.setupSignal &&
+  prev.coin.setupLabel === next.coin.setupLabel &&
+  prev.coin.confidence === next.coin.confidence &&
   prev.coin.zoneBreakoutSignal === next.coin.zoneBreakoutSignal &&
   prev.coin.zonePosition === next.coin.zonePosition &&
+  prev.coin.demandZonePrice === next.coin.demandZonePrice &&
+  prev.coin.supplyZonePrice === next.coin.supplyZonePrice &&
   prev.coin.stopLoss === next.coin.stopLoss &&
   prev.coin.takeProfit === next.coin.takeProfit &&
-  prev.coin.riskReward === next.coin.riskReward &&
   prev.coin.superTrend === next.coin.superTrend &&
+  prev.coin.macdCandles === next.coin.macdCandles &&
+  prev.coin.stCandles === next.coin.stCandles &&
+  prev.coin.volumeGate === next.coin.volumeGate &&
+  prev.coin.volBuyRatios['1m'] === next.coin.volBuyRatios['1m'] &&
+  prev.coin.volBuyRatios['5m'] === next.coin.volBuyRatios['5m'] &&
+  prev.coin.volBuyRatios['15m'] === next.coin.volBuyRatios['15m'] &&
+  prev.coin.volBuyRatios['1h'] === next.coin.volBuyRatios['1h'] &&
   prev.coin.flashUp === next.coin.flashUp &&
   prev.coin.flashDown === next.coin.flashDown &&
   prev.rank === next.rank &&

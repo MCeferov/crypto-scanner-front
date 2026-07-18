@@ -12,7 +12,6 @@ interface ChartToolbarProps {
 
 const OVERLAY_INDICATORS: { key: IndicatorKey; label: string }[] = [
   { key: 'volume', label: 'Volume' },
-  { key: 'bollingerBands', label: 'BB' },
   { key: 'superTrend', label: 'SuperTrend' },
 ];
 
@@ -133,15 +132,6 @@ export function ChartToolbar({
             <input
               type="number" min={2} max={100} value={settings.macd.slow}
               onChange={e => onUpdateSettings({ macd: { ...settings.macd, slow: +e.target.value } })}
-              className="w-14 px-1.5 py-0.5 rounded border"
-              style={{ background: 'var(--chart-surface)', borderColor: 'var(--chart-border)', color: 'var(--chart-text-bright)' }}
-            />
-          </label>
-          <label className="flex items-center gap-2">
-            BB Period
-            <input
-              type="number" min={5} max={50} value={settings.bollingerBands.period}
-              onChange={e => onUpdateSettings({ bollingerBands: { ...settings.bollingerBands, period: +e.target.value } })}
               className="w-14 px-1.5 py-0.5 rounded border"
               style={{ background: 'var(--chart-surface)', borderColor: 'var(--chart-border)', color: 'var(--chart-text-bright)' }}
             />
