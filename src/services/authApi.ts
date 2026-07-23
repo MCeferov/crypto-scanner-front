@@ -30,6 +30,14 @@ export class AuthApiError extends Error {
   }
 }
 
+type AuthFailureHandler = () => void;
+let authFailureHandler: AuthFailureHandler | null = null;
+
+/** Register once from AuthProvider — clears React session on 401 */
+export function setAuthFailureHandler(handler: AuthFailureHandler | null): void {
+  authFailureHandler = handler;
+}
+
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -67,6 +75,10 @@ async function authFetch<T>(
   }
 
   if (!res.ok) {
+    if (res.status === 401 && auth) {
+      clearStoredToken();
+      authFailureHandler?.();
+    }
     throw new AuthApiError(data.message ?? 'Request failed', res.status, data.code);
   }
 

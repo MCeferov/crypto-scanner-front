@@ -17,6 +17,8 @@ export const CHART_TIMEFRAMES: { key: ChartTimeframe; label: string; binance: st
   { key: '1w', label: '1W', binance: '1w' },
 ];
 
+export type CandleMode = 'normal' | 'heikinAshi';
+
 export type IndicatorKey =
   | 'volume'
   | 'bollingerBands'
@@ -26,19 +28,39 @@ export type IndicatorKey =
   | 'stochRsi';
 
 export interface IndicatorSettings {
-  rsi: { period: number; enabled: boolean; panel: boolean };
+  candleMode: CandleMode;
+  rsi: {
+    period: number;
+    oversold: number;
+    overbought: number;
+    enabled: boolean;
+    panel: boolean;
+  };
   macd: { fast: number; slow: number; signal: number; enabled: boolean; panel: boolean };
   volume: { enabled: boolean };
-  stochRsi: { rsiPeriod: number; stochPeriod: number; kSmooth: number; dSmooth: number; enabled: boolean; panel: boolean };
+  stochRsi: {
+    rsiPeriod: number;
+    stochPeriod: number;
+    kSmooth: number;
+    dSmooth: number;
+    oversold: number;
+    overbought: number;
+    enabled: boolean;
+    panel: boolean;
+  };
   superTrend: { period: number; multiplier: number; enabled: boolean };
   bollingerBands: { period: number; stdDev: number; enabled: boolean };
 }
 
 export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
-  rsi: { period: 14, enabled: true, panel: true },
+  candleMode: 'normal',
+  rsi: { period: 14, oversold: 30, overbought: 70, enabled: true, panel: true },
   macd: { fast: 12, slow: 26, signal: 9, enabled: true, panel: true },
   volume: { enabled: true },
-  stochRsi: { rsiPeriod: 14, stochPeriod: 14, kSmooth: 3, dSmooth: 3, enabled: true, panel: true },
+  stochRsi: {
+    rsiPeriod: 14, stochPeriod: 14, kSmooth: 3, dSmooth: 3,
+    oversold: 20, overbought: 80, enabled: true, panel: true,
+  },
   superTrend: { period: 10, multiplier: 3, enabled: true },
   bollingerBands: { period: 20, stdDev: 2, enabled: false },
 };

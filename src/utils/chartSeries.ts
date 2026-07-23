@@ -1,11 +1,12 @@
 import type { UTCTimestamp } from 'lightweight-charts';
 import type { Kline } from '../services/binanceApi';
-import type { IndicatorSettings } from '../types/chart';
+import type { CandleMode, IndicatorSettings } from '../types/chart';
 import { calculateRSI } from '../indicators/rsi';
 import { calculateMACD } from '../indicators/macd';
 import { calculateBollingerBands } from '../indicators/bollingerBands';
 import { calculateSuperTrend } from '../indicators/supertrend';
 import { calculateStochRSI } from '../indicators/stochRsi';
+import { heikinAshiToKlines } from '../indicators/heikinAshi';
 
 export function toChartTime(openTime: number): UTCTimestamp {
   return Math.floor(openTime / 1000) as UTCTimestamp;
@@ -91,10 +92,17 @@ export function buildStochRSISeries(klines: Kline[], settings: IndicatorSettings
   };
 }
 
+/** Candle display source — indicators always use real OHLC. */
+export function displayKlinesForCandles(klines: Kline[], mode: CandleMode): Kline[] {
+  return mode === 'heikinAshi' ? heikinAshiToKlines(klines) : klines;
+}
+
 export function computeAllChartSeries(klines: Kline[], settings: IndicatorSettings) {
+  const candleSource = displayKlinesForCandles(klines, settings.candleMode);
   return {
-    candles: klinesToCandles(klines),
-    volume: settings.volume.enabled ? klinesToVolume(klines) : [],
+    candles: klinesToCandles(candleSource),
+    volume: settings.volume.enabled ? klinesToVolume(candleSource) : [],
+    // Indicators stay on real momentum (raw OHLC), independent of HA candle view
     rsi: settings.rsi.enabled ? buildRSISeries(klines, settings.rsi.period) : [],
     macd: settings.macd.enabled
       ? buildMACDSeries(klines, settings.macd.fast, settings.macd.slow, settings.macd.signal)

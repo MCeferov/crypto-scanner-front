@@ -34,6 +34,7 @@ export class ChartKlineWebSocket {
           low: parseFloat(k.l),
           close: parseFloat(k.c),
           volume: parseFloat(k.v),
+          takerBuyVolume: k.V != null ? parseFloat(k.V) : undefined,
           closeTime: k.T,
         }, k.x);
       } catch { /* ignore */ }

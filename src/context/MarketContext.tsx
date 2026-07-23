@@ -58,10 +58,16 @@ export type FilterKey =
   | 'candlesMature' | 'candlesFresh' | 'syncStrong';
 
 /** Optional detail columns — hidden by default to reduce clutter */
-export type ExtraCol = 'macd' | 'volume' | 'stoch' | 'st';
-export const ALL_EXTRA_COLS: ExtraCol[] = ['macd', 'volume', 'stoch', 'st'];
+export type ExtraCol =
+  | 'macd' | 'volume' | 'stoch' | 'st'
+  | 'research' | 'ha' | 'zone' | 'break' | 'sl' | 'tp';
+export const ALL_EXTRA_COLS: ExtraCol[] = [
+  'macd', 'volume', 'stoch', 'st',
+  'research', 'ha', 'zone', 'break', 'sl', 'tp',
+];
 export const EXTRA_COL_LABELS: Record<ExtraCol, string> = {
   macd: 'MACD', volume: 'Vol', stoch: 'Stoch', st: 'ST',
+  research: 'Market', ha: 'HA', zone: 'Zone', break: 'Break', sl: 'SL', tp: 'TP',
 };
 
 /** RSI timeframe column visibility — 1m/5m daxil, sıra qısa→uzun */
@@ -540,7 +546,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [visibleRsiCols, setVisibleRsiCols] = useState<RsiTf[]>(['1m']);
   const [visibleExtraCols, setVisibleExtraCols] = useState<ExtraCol[]>([]);
   const [visibleOptionalFilters, setVisibleOptionalFilters] = useState<FilterKey[]>([]);
-  const [visibleAnalysisTfs, setVisibleAnalysisTfs] = useState<AnalysisTf[]>(['15m', '30m', '1h', '4h']);
+  const [visibleAnalysisTfs, setVisibleAnalysisTfs] = useState<AnalysisTf[]>(['15m', '1h', '4h']);
 
   const toggleExtraCol = useCallback((col: ExtraCol) => {
     setVisibleExtraCols(prev =>

@@ -4,7 +4,7 @@ import type { CoinData, RsiTf, ExtraCol, AnalysisTf } from '../../context/Market
 import { RSICell } from './RSICell';
 import { CandleAge } from './CandleAge';
 import {
-  formatPrice, formatPercent, formatAssetPrice,
+  formatPrice, formatPercent, formatVolume, formatAssetPrice,
   classifySignal, classifyZoneBreakout, classifyHaTrend,
   zoneBreakoutLabel, haTrendLabel,
   mtfDirShort, classifyMtfDir, chartSignalLabel, classifyResearchSignal,
@@ -56,10 +56,8 @@ function VolumeConfirmCell({
 }) {
   if (!loaded) return <SkeletonCell key={colId} w={44} />;
 
-  const rsiValue = coin[RSI_KEY[activeRsiTf]] as number | null;
-  const { status, reason } = classifyVolume(
+  const { status, reason, buyPct } = classifyVolume(
     activeRsiTf,
-    rsiValue,
     coin.volBuyRatios[activeRsiTf],
   );
 
@@ -67,11 +65,11 @@ function VolumeConfirmCell({
     return (
       <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 76 }}>
         <span
-          className="inline-block rounded px-2 py-0.5 text-[10px] font-semibold"
+          className="inline-block rounded px-2 py-0.5 text-[10px] font-semibold font-mono"
           title={reason}
           style={{ color: 'var(--muted)', background: 'var(--elevated)', border: '1px solid var(--border)' }}
         >
-          {t('table.volumeNeutral')}
+          {buyPct != null ? `${buyPct}%` : t('table.volumeNeutral')}
         </span>
       </td>
     );
@@ -99,7 +97,7 @@ function VolumeConfirmCell({
   return (
     <td key={colId} className="px-2 py-2 text-center" style={{ minWidth: 76 }}>
       <span
-        className="inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap"
+        className="inline-block font-bold rounded px-2 py-0.5 text-[10px] whitespace-nowrap font-mono"
         title={reason}
         style={{
           color: real ? '#26a69a' : '#ef5350',
@@ -108,6 +106,7 @@ function VolumeConfirmCell({
         }}
       >
         {real ? t('table.volumeReal') : t('table.volumeFake')}
+        {buyPct != null ? ` ${buyPct}%` : ''}
       </span>
     </td>
   );
@@ -204,6 +203,14 @@ export const HeatmapRow = memo(function HeatmapRow({
         );
 
       case 'volume':
+        return (
+          <td key={colId} className="px-2 py-2 text-right" style={{ minWidth: 76 }}>
+            <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
+              {formatVolume(coin.volume24h)}
+            </span>
+          </td>
+        );
+
       case 'vol24h':
         return <VolumeConfirmCell key={colId} colId={colId} coin={coin} loaded={loaded} activeRsiTf={activeRsiTf} t={t} />;
 
@@ -477,6 +484,9 @@ export const HeatmapRow = memo(function HeatmapRow({
   prev.coin.volBuyRatios['5m'] === next.coin.volBuyRatios['5m'] &&
   prev.coin.volBuyRatios['15m'] === next.coin.volBuyRatios['15m'] &&
   prev.coin.volBuyRatios['1h'] === next.coin.volBuyRatios['1h'] &&
+  prev.coin.volBuyRatios['4h'] === next.coin.volBuyRatios['4h'] &&
+  prev.coin.volBuyRatios['1d'] === next.coin.volBuyRatios['1d'] &&
+  prev.coin.volume24h === next.coin.volume24h &&
   prev.coin.flashUp === next.coin.flashUp &&
   prev.coin.flashDown === next.coin.flashDown &&
   prev.rank === next.rank &&

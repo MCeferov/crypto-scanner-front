@@ -6,8 +6,6 @@ import {
   VOL_SMA_PERIOD,
   VOL_EXPANSION_MULT,
   VOL_DRY_MULT,
-  RSI_STRONG_OS,
-  RSI_STRONG_OB,
 } from './signalConfig';
 
 export type VolumeConfirmStatus = 'real' | 'fake' | 'neutral' | 'nodata';
@@ -17,6 +15,8 @@ export type VolumeGate = 'confirm' | 'weak' | 'diverge' | 'neutral' | 'nodata';
 export interface VolumeConfirmResult {
   status: VolumeConfirmStatus;
   buyRatio: number | null;
+  /** Alıcı gücü % (0–100), Binance taker buy əsasında */
+  buyPct: number | null;
   reason: string;
 }
 
@@ -32,19 +32,25 @@ const TF_LABELS: Record<VolumeRsiTf, string> = {
   '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D',
 };
 
+/**
+ * Binance-style buy power: takerBuyVolume / total volume.
+ * Only candles with real takerBuyVolume count — no RSI, no green-candle guess.
+ */
 function buyRatioForKlines(klines: Kline[], lookback = VOL_LOOKBACK): number | null {
   const recent = klines.slice(-lookback);
   let buy = 0;
   let total = 0;
+  let takerBars = 0;
+
   for (const k of recent) {
-    if (k.volume <= 0) continue;
-    const buyVol = k.takerBuyVolume != null
-      ? k.takerBuyVolume
-      : (k.close >= k.open ? k.volume : 0);
-    buy += buyVol;
+    if (k.volume <= 0 || k.takerBuyVolume == null) continue;
+    buy += k.takerBuyVolume;
     total += k.volume;
+    takerBars++;
   }
-  if (total <= 0) return null;
+
+  // Need at least one real taker-buy bar (Binance kline field [9])
+  if (takerBars === 0 || total <= 0) return null;
   return buy / total;
 }
 
@@ -69,8 +75,8 @@ export function computeBuyRatios(klineMap: Record<string, Kline[]>): Record<Volu
 }
 
 /**
- * RSI siqnalı üçün volume təsdiqi — setup/confidence gate.
- * side: 'buy' | 'sell' | null (neytral RSI)
+ * Setup/confidence gate — alıcı gücü + volume expansion.
+ * side: gözlənilən istiqamət (siqnal); volume özü RSI-dən asılı deyil.
  */
 export function analyzeVolumeForSignal(
   klines: Kline[],
@@ -79,23 +85,13 @@ export function analyzeVolumeForSignal(
   const buyRatio = buyRatioForKlines(klines);
   const volVsSma = volumeVsSma(klines);
 
-  if (side === null) {
-    return {
-      buyRatio,
-      volVsSma,
-      gate: 'neutral',
-      volumeScore: 50,
-      reason: 'RSI neytral — volume gate gözləyir',
-    };
-  }
-
   if (buyRatio === null) {
     return {
       buyRatio: null,
       volVsSma,
       gate: 'nodata',
       volumeScore: 0,
-      reason: 'Həcm məlumatı yoxdur',
+      reason: 'Taker buy həcmi yoxdur (Binance alıcı gücü)',
     };
   }
 
@@ -103,18 +99,38 @@ export function analyzeVolumeForSignal(
   const expansion = volVsSma !== null && volVsSma >= VOL_EXPANSION_MULT;
   const dry = volVsSma !== null && volVsSma <= VOL_DRY_MULT;
 
+  if (side === null) {
+    // Neytral siqnal — yalnız alıcı gücünü skorla
+    if (buyRatio >= VOL_BUY_RATIO_CONFIRM) {
+      return {
+        buyRatio, volVsSma, gate: 'confirm', volumeScore: expansion ? 80 : 65,
+        reason: `Alıcı gücü ${pct}%`,
+      };
+    }
+    if (buyRatio <= VOL_SELL_RATIO_CONFIRM) {
+      return {
+        buyRatio, volVsSma, gate: 'confirm', volumeScore: expansion ? 80 : 65,
+        reason: `Satıcı gücü ${100 - pct}%`,
+      };
+    }
+    return {
+      buyRatio, volVsSma, gate: 'neutral', volumeScore: 50,
+      reason: `Balanslı axın ${pct}% alıcı`,
+    };
+  }
+
   if (side === 'buy') {
     const flowOk = buyRatio >= VOL_BUY_RATIO_CONFIRM;
     if (flowOk && expansion) {
       return {
         buyRatio, volVsSma, gate: 'confirm', volumeScore: 90,
-        reason: `Alıcı həcmi ${pct}% + volume expansion (${volVsSma!.toFixed(2)}× SMA)`,
+        reason: `Alıcı gücü ${pct}% + volume expansion (${volVsSma!.toFixed(2)}× SMA)`,
       };
     }
     if (flowOk && !dry) {
       return {
         buyRatio, volVsSma, gate: 'confirm', volumeScore: 72,
-        reason: `Alıcı həcmi ${pct}% təsdiqləyir`,
+        reason: `Alıcı gücü ${pct}% təsdiqləyir`,
       };
     }
     if (!flowOk && expansion) {
@@ -126,12 +142,12 @@ export function analyzeVolumeForSignal(
     if (dry) {
       return {
         buyRatio, volVsSma, gate: 'weak', volumeScore: 30,
-        reason: `Zəif həcm (${volVsSma?.toFixed(2) ?? '?'}× SMA) — siqnal zəif`,
+        reason: `Zəif həcm (${volVsSma?.toFixed(2) ?? '?'}× SMA)`,
       };
     }
     return {
       buyRatio, volVsSma, gate: 'weak', volumeScore: 40,
-      reason: `Alıcı həcmi ${pct}% — zəif təsdiq`,
+      reason: `Alıcı gücü ${pct}% — zəif`,
     };
   }
 
@@ -140,13 +156,13 @@ export function analyzeVolumeForSignal(
   if (flowOk && expansion) {
     return {
       buyRatio, volVsSma, gate: 'confirm', volumeScore: 90,
-      reason: `Satıcı həcmi ${100 - pct}% + volume expansion`,
+      reason: `Satıcı gücü ${100 - pct}% + volume expansion`,
     };
   }
   if (flowOk && !dry) {
     return {
       buyRatio, volVsSma, gate: 'confirm', volumeScore: 72,
-      reason: `Satıcı həcmi ${100 - pct}% təsdiqləyir`,
+      reason: `Satıcı gücü ${100 - pct}% təsdiqləyir`,
     };
   }
   if (!flowOk && expansion) {
@@ -167,48 +183,52 @@ export function analyzeVolumeForSignal(
   };
 }
 
-/** UI badge — vahid RSI_STRONG hədləri ilə */
+/**
+ * UI badge — yalnız Binance taker buy (alıcı gücü), RSI iştirak etmir.
+ * Real  = alıcı gücü ≥ 55%
+ * Fake  = alıcı gücü ≤ 45% (satıcı üstünlüyü)
+ * Neutral = 45–55% balans
+ */
 export function classifyVolume(
   tf: VolumeRsiTf,
-  rsiValue: number | null,
   buyRatio: number | null,
 ): VolumeConfirmResult {
   const label = TF_LABELS[tf];
 
-  if (rsiValue === null) {
-    return { status: 'nodata', buyRatio, reason: `RSI ${label} məlumatı yoxdur` };
-  }
-
-  const rsiLabel = `RSI ${label}: ${rsiValue.toFixed(1)}`;
-  const isBuy = rsiValue < RSI_STRONG_OS;
-  const isSell = rsiValue > RSI_STRONG_OB;
-
-  if (!isBuy && !isSell) {
-    return { status: 'neutral', buyRatio, reason: `${rsiLabel} — neytral zona` };
-  }
-
   if (buyRatio === null) {
-    return { status: 'nodata', buyRatio: null, reason: `${rsiLabel} — həcm məlumatı yoxdur` };
-  }
-
-  const pct = Math.round(buyRatio * 100);
-  if (isBuy) {
-    const real = buyRatio >= VOL_BUY_RATIO_CONFIRM;
     return {
-      status: real ? 'real' : 'fake',
-      buyRatio,
-      reason: real
-        ? `${rsiLabel} alış + alıcı həcmi ${pct}% (real)`
-        : `${rsiLabel} alış, amma alıcı həcmi yalnız ${pct}% (zəif/saxta)`,
+      status: 'nodata',
+      buyRatio: null,
+      buyPct: null,
+      reason: `${label}: taker buy yoxdur — Binance alıcı gücü hesablana bilmədi`,
     };
   }
 
-  const real = buyRatio <= VOL_SELL_RATIO_CONFIRM;
+  const buyPct = Math.round(buyRatio * 100);
+  const sellPct = 100 - buyPct;
+
+  if (buyRatio >= VOL_BUY_RATIO_CONFIRM) {
+    return {
+      status: 'real',
+      buyRatio,
+      buyPct,
+      reason: `${label}: alıcı gücü ${buyPct}% (taker buy) — Real`,
+    };
+  }
+
+  if (buyRatio <= VOL_SELL_RATIO_CONFIRM) {
+    return {
+      status: 'fake',
+      buyRatio,
+      buyPct,
+      reason: `${label}: alıcı gücü ${buyPct}% / satıcı ${sellPct}% — Saxta (zəif alış)`,
+    };
+  }
+
   return {
-    status: real ? 'real' : 'fake',
+    status: 'neutral',
     buyRatio,
-    reason: real
-      ? `${rsiLabel} satış + satıcı həcmi ${100 - pct}% (real)`
-      : `${rsiLabel} satış, amma alıcı həcmi ${pct}% (zəif/saxta)`,
+    buyPct,
+    reason: `${label}: balanslı axın — alıcı ${buyPct}% / satıcı ${sellPct}%`,
   };
 }

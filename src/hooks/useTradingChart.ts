@@ -6,6 +6,7 @@ import {
   HistogramSeries,
   LineSeries,
   CrosshairMode,
+  LineStyle,
   type IChartApi,
   type ISeriesApi,
 } from 'lightweight-charts';
@@ -21,7 +22,7 @@ import {
   type ChartTimeframe,
   type IndicatorSettings,
 } from '../types/chart';
-import { computeAllChartSeries, toChartTime } from '../utils/chartSeries';
+import { computeAllChartSeries, displayKlinesForCandles, toChartTime } from '../utils/chartSeries';
 
 function buildChartOptions(theme: ChartThemeColors) {
   return {
@@ -187,8 +188,23 @@ export function useTradingChart(
 
     if (s.rsi.enabled && s.rsi.panel && series.rsi.length) {
       const idx = addIndicatorPane(chart, 'rsi');
-      rsiSeriesRef.current = chart.addSeries(LineSeries, { color: theme.rsi, lineWidth: 2, title: 'RSI' }, idx);
+      rsiSeriesRef.current = chart.addSeries(LineSeries, {
+        color: theme.rsi, lineWidth: 2, title: 'RSI',
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+      }, idx);
       rsiSeriesRef.current.setData(series.rsi);
+      rsiSeriesRef.current.createPriceLine({
+        price: s.rsi.overbought, color: 'rgba(239,83,80,0.7)', lineWidth: 1,
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `OB ${s.rsi.overbought}`,
+      });
+      rsiSeriesRef.current.createPriceLine({
+        price: s.rsi.oversold, color: 'rgba(38,166,154,0.7)', lineWidth: 1,
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `OS ${s.rsi.oversold}`,
+      });
+      rsiSeriesRef.current.createPriceLine({
+        price: 50, color: 'rgba(150,150,150,0.35)', lineWidth: 1,
+        lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: '',
+      });
     }
 
     if (s.macd.enabled && s.macd.panel && series.macd.histogram.length) {
@@ -203,8 +219,19 @@ export function useTradingChart(
 
     if (s.stochRsi.enabled && s.stochRsi.panel && series.stochRsi.k.length) {
       const idx = addIndicatorPane(chart, 'stoch');
-      stochKRef.current = chart.addSeries(LineSeries, { color: theme.stochK, lineWidth: 2, title: 'Stoch K' }, idx);
+      stochKRef.current = chart.addSeries(LineSeries, {
+        color: theme.stochK, lineWidth: 2, title: 'Stoch K',
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+      }, idx);
       stochKRef.current.setData(series.stochRsi.k);
+      stochKRef.current.createPriceLine({
+        price: s.stochRsi.overbought, color: 'rgba(239,83,80,0.7)', lineWidth: 1,
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `OB ${s.stochRsi.overbought}`,
+      });
+      stochKRef.current.createPriceLine({
+        price: s.stochRsi.oversold, color: 'rgba(38,166,154,0.7)', lineWidth: 1,
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `OS ${s.stochRsi.oversold}`,
+      });
       stochDRef.current = chart.addSeries(LineSeries, { color: theme.stochD, lineWidth: 1, title: 'Stoch D' }, idx);
       stochDRef.current.setData(series.stochRsi.d);
     }
@@ -235,29 +262,36 @@ export function useTradingChart(
     const candle = candleSeriesRef.current;
     if (!candle) return;
 
-    const time = toChartTime(kline.openTime);
-    candle.update({ time, open: kline.open, high: kline.high, low: kline.low, close: kline.close });
-
-    if (volumeSeriesRef.current) {
-      const theme = chartThemeRef.current;
-      volumeSeriesRef.current.update({
-        time,
-        value: kline.volume,
-        color: kline.close >= kline.open ? theme.volumeUp : theme.volumeDown,
-      });
-    }
-
     const klines = klinesRef.current;
     const last = klines[klines.length - 1];
     if (last && last.openTime === kline.openTime) {
       klines[klines.length - 1] = kline;
     } else if (isClosed) {
       klines.push(kline);
-      if (klines.length > 500) klines.shift();
+      if (klines.length > CHART_KLINE_LIMIT) klines.shift();
+    } else if (!last || last.openTime !== kline.openTime) {
+      klines.push(kline);
+    }
+
+    const s = settingsRef.current;
+    const display = displayKlinesForCandles(klines, s.candleMode);
+    const bar = display[display.length - 1];
+    if (!bar) return;
+
+    const time = toChartTime(bar.openTime);
+    candle.update({ time, open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+
+    if (volumeSeriesRef.current) {
+      const theme = chartThemeRef.current;
+      volumeSeriesRef.current.update({
+        time,
+        value: bar.volume,
+        color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown,
+      });
     }
 
     if (isClosed) {
-      applySeries(klines, settingsRef.current);
+      applySeries(klines, s);
     }
   }, [applySeries]);
 

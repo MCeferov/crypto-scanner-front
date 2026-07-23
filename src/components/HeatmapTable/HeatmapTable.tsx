@@ -50,30 +50,39 @@ export function HeatmapTable() {
   ], [t]);
 
   const extraColDefs: Record<ExtraCol, ColDef> = useMemo(() => ({
-    macd:   { id: 'macd',   sk: 'macd',   label: t('columns.macd'),   sub: t('columns.macdHist'), align: 'center', minWidth: 68 },
-    volume: { id: 'vol24h', sk: null, label: t('columns.volume'), sub: t('table.volumeSub'), align: 'center', minWidth: 76 },
-    stoch:  { id: 'stoch',  sk: null,     label: t('columns.stoch'),  sub: t('columns.stochRsi'), align: 'center', minWidth: 62 },
-    st:     { id: 'st',     sk: 'superTrend', label: t('columns.st'), sub: t('columns.stTrend'), align: 'center', minWidth: 58 },
+    macd:     { id: 'macd',     sk: 'macd',         label: t('columns.macd'),     sub: t('columns.macdHist'), align: 'center', minWidth: 68 },
+    volume:   { id: 'vol24h',   sk: null,           label: t('columns.volume'),   sub: t('table.volumeSub'), align: 'center', minWidth: 76 },
+    stoch:    { id: 'stoch',    sk: null,           label: t('columns.stoch'),    sub: t('columns.stochRsi'), align: 'center', minWidth: 62 },
+    st:       { id: 'st',       sk: 'superTrend',   label: t('columns.st'),       sub: t('columns.stTrend'), align: 'center', minWidth: 58 },
+    research: { id: 'research', sk: 'research',     label: t('columns.research'), sub: t('columns.researchSub'), align: 'center', minWidth: 72 },
+    ha:       { id: 'ha',       sk: 'haSignal',     label: t('columns.ha'),       sub: 'TF', align: 'center', minWidth: 44 },
+    zone:     { id: 'zone',     sk: null,           label: t('columns.zone'),     sub: 'D / S', align: 'center', minWidth: 88 },
+    break:    { id: 'break',    sk: 'zoneBreakout', label: t('columns.break'),    sub: t('columns.breakDir'), align: 'center', minWidth: 68 },
+    sl:       { id: 'sl',       sk: 'stopLoss',     label: t('columns.sl'),       sub: 'S/D+ATR', align: 'right', minWidth: 72 },
+    tp:       { id: 'tp',       sk: 'takeProfit',   label: t('columns.tp'),       sub: 'Zone/ATR', align: 'right', minWidth: 72 },
   }), [t]);
 
-  const coreRightCols: ColDef[] = useMemo(() => [
-    { id: 'trend',    sk: 'trendScore', label: t('columns.trend'),    sub: t('columns.trendScore'), align: 'center', minWidth: 80 },
-    { id: 'mtf',      sk: null,         label: t('columns.mtf'),      sub: '1·5·15·30·1H·4H', align: 'center', minWidth: 140 },
-    { id: 'chartSig', sk: 'chartSignal', label: t('columns.chart'),   sub: t('columns.chartSignal'), align: 'center', minWidth: 64 },
-    { id: 'research', sk: 'research',    label: t('columns.research'), sub: t('columns.researchSub'), align: 'center', minWidth: 72 },
-    { id: 'ha',       sk: 'haSignal',   label: t('columns.ha'),       sub: 'TF', align: 'center', minWidth: 44 },
-    { id: 'zone',     sk: null,         label: t('columns.zone'),     sub: 'D / S', align: 'center', minWidth: 88 },
-    { id: 'break',    sk: 'zoneBreakout', label: t('columns.break'),  sub: t('columns.breakDir'), align: 'center', minWidth: 68 },
-    { id: 'sl',       sk: 'stopLoss',   label: t('columns.sl'), sub: 'S/D+ATR', align: 'right',  minWidth: 72 },
-    { id: 'tp',       sk: 'takeProfit', label: t('columns.tp'), sub: 'Zone/ATR', align: 'right',  minWidth: 72 },
-    { id: 'setup',    sk: 'setup',      label: t('columns.setup'), sub: t('columns.setupFinal'), align: 'center', minWidth: 88 },
-  ], [t]);
+  const coreRightCols: ColDef[] = useMemo(() => {
+    const mtfWidth = Math.max(72, 18 + visibleAnalysisTfs.length * 22);
+    return [
+      { id: 'trend',    sk: 'trendScore',  label: t('columns.trend'),  sub: t('columns.trendScore'), align: 'center', minWidth: 80 },
+      { id: 'mtf',      sk: null,          label: t('columns.mtf'),    sub: 'TF', align: 'center', minWidth: mtfWidth },
+      { id: 'chartSig', sk: 'chartSignal', label: t('columns.chart'),  sub: t('columns.chartSignal'), align: 'center', minWidth: 64 },
+      { id: 'setup',    sk: 'setup',       label: t('columns.setup'),  sub: t('columns.setupFinal'), align: 'center', minWidth: 88 },
+    ];
+  }, [t, visibleAnalysisTfs.length]);
 
   const extraColToggleLabels: Record<ExtraCol, string> = useMemo(() => ({
     macd: t('columns.macd'),
     volume: t('columns.extraVol'),
     stoch: t('columns.stoch'),
     st: t('columns.st'),
+    research: t('columns.research'),
+    ha: t('columns.ha'),
+    zone: t('columns.zone'),
+    break: t('columns.break'),
+    sl: t('columns.sl'),
+    tp: t('columns.tp'),
   }), [t]);
 
   const extraColId = (col: ExtraCol): string => (col === 'volume' ? 'vol24h' : col);
@@ -100,7 +109,7 @@ export function HeatmapTable() {
     const extraCols = ALL_EXTRA_COLS
       .filter(c => visibleExtraCols.includes(c))
       .map(c => ({ ...extraColDefs[c], id: extraColId(c) }));
-    return [...staticLeft, ...quoteCols.filter(c => c.id !== 'volume'), ...rsiCols, ...extraCols, ...coreRightCols];
+    return [...staticLeft, ...quoteCols, ...rsiCols, ...extraCols, ...coreRightCols];
   }, [visibleRsiCols, visibleExtraCols, showIndicatorColumns, staticLeft, quoteCols, extraColDefs, coreRightCols, t]);
 
   const renderHeader = useCallback((col: ColDef) => {
@@ -165,23 +174,30 @@ export function HeatmapTable() {
         })}
       </div>
       <div className="w-px h-4" style={{ background: 'var(--border)' }} />
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <span className="text-[11px] mr-1" style={{ color: 'var(--dim)' }}>{t('toolbar.extra')}</span>
         {ALL_EXTRA_COLS.map(col => {
           const on = visibleExtraCols.includes(col);
+          const isAnalysisExtra = col === 'research' || col === 'ha' || col === 'zone' || col === 'break' || col === 'sl' || col === 'tp';
           return (
-            <button
-              key={col}
-              onClick={() => toggleExtraCol(col)}
-              className="text-[10px] px-2 py-0.5 rounded font-semibold transition-all"
-              style={{
-                background: on ? 'rgba(100,116,139,.15)' : 'var(--elevated)',
-                color: on ? 'var(--text)' : 'var(--dim)',
-                border: `1px solid ${on ? 'var(--border-lite)' : 'var(--border)'}`,
-              }}
-            >
-              {extraColToggleLabels[col]}
-            </button>
+            <React.Fragment key={col}>
+              {col === 'research' && (
+                <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border)' }} />
+              )}
+              <button
+                onClick={() => toggleExtraCol(col)}
+                className="text-[10px] px-2 py-0.5 rounded font-semibold transition-all"
+                style={{
+                  background: on
+                    ? (isAnalysisExtra ? 'rgba(38,166,154,.12)' : 'rgba(100,116,139,.15)')
+                    : 'var(--elevated)',
+                  color: on ? 'var(--text)' : 'var(--dim)',
+                  border: `1px solid ${on ? (isAnalysisExtra ? 'rgba(38,166,154,.3)' : 'var(--border-lite)') : 'var(--border)'}`,
+                }}
+              >
+                {extraColToggleLabels[col]}
+              </button>
+            </React.Fragment>
           );
         })}
       </div>

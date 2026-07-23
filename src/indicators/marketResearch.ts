@@ -292,8 +292,17 @@ export function enrichCoinWithResearch(
 
   const setup = computeUnifiedSetup(withResearch, sync, {
     volumeGate: withResearch.volumeGate,
+    volumeSide:
+      withResearch.volBuyRatios[indicatorTf] != null
+        ? (withResearch.volBuyRatios[indicatorTf]! >= 0.55
+          ? 'buy'
+          : withResearch.volBuyRatios[indicatorTf]! <= 0.45
+            ? 'sell'
+            : null)
+        : null,
     rsiBias: withResearch.rsiBias,
     sentimentScore: sentiment.score,
+    activeTfs,
   });
   const reversal = computeReversalRisk({ ...withResearch, ...setup });
   const adjusted = applyReversalPenalty(setup.setupSignal, setup.setupConviction, reversal.reversalRisk);

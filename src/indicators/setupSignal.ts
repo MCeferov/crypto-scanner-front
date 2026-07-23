@@ -116,21 +116,38 @@ export function computeUnifiedSetup(
   sync?: SignalSyncResult,
   opts?: {
     volumeGate?: VolumeGate | null;
+    /** Alıcı/satıcı tərəfi — confirm gate-i doğru istiqamətdə skorlamaq üçün */
+    volumeSide?: 'buy' | 'sell' | null;
     rsiBias?: RsiBias | null;
     sentimentScore?: number | null;
+    /** UI-da seçilmiş analiz TF-ləri; verilməsə bütün TF-lər səs verir */
+    activeTfs?: Array<'1m' | '5m' | '15m' | '30m' | '1h' | '4h'>;
   },
 ): SetupResult {
   const votes: Vote[] = [];
 
-  // ── Qrafik analizi (timeframe-lər) ──
-  const mtfVotes: Vote[] = [
-    { score: tfScore(coin.mtf1m),  weight: 0.7, label: '1m chart',  reasons: [`1m: ${coin.mtf1m}`] },
-    { score: tfScore(coin.mtf5m),  weight: 0.9, label: '5m chart',  reasons: [`5m: ${coin.mtf5m}`] },
-    { score: tfScore(coin.mtf15m), weight: 1.2, label: '15m chart', reasons: [`15m: ${coin.mtf15m}`] },
-    { score: tfScore(coin.mtf30m), weight: 1.4, label: '30m chart', reasons: [`30m: ${coin.mtf30m}`] },
-    { score: tfScore(coin.mtf1h),  weight: 1.8, label: '1H chart',  reasons: [`1H: ${coin.mtf1h}`] },
-    { score: tfScore(coin.mtf4h),  weight: 2.2, label: '4H chart',  reasons: [`4H: ${coin.mtf4h}`] },
+  const activeTfSet = opts?.activeTfs?.length
+    ? new Set(opts.activeTfs)
+    : null;
+
+  // ── Qrafik analizi (yalnız aktiv timeframe-lər) ──
+  const mtfDefs: Array<{ tf: '1m' | '5m' | '15m' | '30m' | '1h' | '4h'; dir: string; weight: number; label: string }> = [
+    { tf: '1m',  dir: coin.mtf1m,  weight: 0.7, label: '1m chart' },
+    { tf: '5m',  dir: coin.mtf5m,  weight: 0.9, label: '5m chart' },
+    { tf: '15m', dir: coin.mtf15m, weight: 1.2, label: '15m chart' },
+    { tf: '30m', dir: coin.mtf30m, weight: 1.4, label: '30m chart' },
+    { tf: '1h',  dir: coin.mtf1h,  weight: 1.8, label: '1H chart' },
+    { tf: '4h',  dir: coin.mtf4h,  weight: 2.2, label: '4H chart' },
   ];
+  const mtfVotes: Vote[] = mtfDefs
+    .filter(d => !activeTfSet || activeTfSet.has(d.tf))
+    .filter(d => d.dir !== 'NEUTRAL')
+    .map(d => ({
+      score: tfScore(d.dir),
+      weight: d.weight,
+      label: d.label,
+      reasons: [`${d.tf}: ${d.dir}`],
+    }));
   votes.push(...mtfVotes);
 
   if (coin.chartSignal !== 'NEUTRAL') {
@@ -275,12 +292,23 @@ export function computeUnifiedSetup(
   }
 
   const vg = opts?.volumeGate ?? (coin as CoinData & { volumeGate?: VolumeGate }).volumeGate;
+  const volSide = opts?.volumeSide ?? null;
   if (vg === 'confirm') {
-    votes.push({ score: 4.2, weight: 2.5, label: 'Volume', reasons: ['Volume təsdiqləyir'] });
+    if (volSide === 'sell') {
+      votes.push({ score: 1.8, weight: 2.5, label: 'Volume', reasons: ['Satıcı gücü təsdiqləyir'] });
+    } else if (volSide === 'buy') {
+      votes.push({ score: 4.2, weight: 2.5, label: 'Volume', reasons: ['Alıcı gücü təsdiqləyir'] });
+    }
+    // side naməlum olanda skor vermə — neytral təzyiq setup-u əyməsin
   } else if (vg === 'weak') {
     votes.push({ score: 2.8, weight: 2, label: 'Volume', reasons: ['Volume zəif'] });
   } else if (vg === 'diverge') {
-    votes.push({ score: 2, weight: 3, label: 'Volume', reasons: ['Volume divergence — veto'] });
+    votes.push({
+      score: volSide === 'sell' ? 3.5 : 2,
+      weight: 3,
+      label: 'Volume',
+      reasons: ['Volume divergence'],
+    });
   }
 
   if (votes.length === 0) {
@@ -314,10 +342,21 @@ export function computeUnifiedSetup(
   if (haBull && (coin.zonePosition === 'at_demand' || coin.zonePosition === 'near_demand')) conviction += 0.2;
   if (haBear && (coin.zonePosition === 'at_supply' || coin.zonePosition === 'near_supply')) conviction -= 0.2;
 
-  const mtfBull = [coin.mtf1m, coin.mtf5m, coin.mtf15m, coin.mtf30m, coin.mtf1h, coin.mtf4h].filter(s => s === 'BUY').length;
-  const mtfBear = [coin.mtf1m, coin.mtf5m, coin.mtf15m, coin.mtf30m, coin.mtf1h, coin.mtf4h].filter(s => s === 'SELL').length;
-  if (mtfBull >= 4) conviction += 0.3;
-  if (mtfBear >= 4) conviction -= 0.3;
+  const mtfDirs = (
+    [
+      ['1m', coin.mtf1m],
+      ['5m', coin.mtf5m],
+      ['15m', coin.mtf15m],
+      ['30m', coin.mtf30m],
+      ['1h', coin.mtf1h],
+      ['4h', coin.mtf4h],
+    ] as const
+  ).filter(([tf]) => !activeTfSet || activeTfSet.has(tf));
+  const mtfBull = mtfDirs.filter(([, s]) => s === 'BUY').length;
+  const mtfBear = mtfDirs.filter(([, s]) => s === 'SELL').length;
+  const mtfMajority = Math.max(2, Math.ceil(mtfDirs.length * 0.65));
+  if (mtfBull >= mtfMajority) conviction += 0.3;
+  if (mtfBear >= mtfMajority) conviction -= 0.3;
 
   if (coin.trendScore >= 70 && coin.riskReward !== null && coin.riskReward >= MIN_RR_ACCEPT) conviction += 0.15;
   if (coin.trendScore <= 30) conviction -= 0.15;
