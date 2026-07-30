@@ -55,8 +55,8 @@ export function DashboardSearch() {
             background: 'var(--bg)',
             border: '1px solid var(--border)',
             color: 'var(--text)',
-            boxShadow: query ? '0 0 0 3px rgba(240,185,11,0.12)' : 'none',
-            borderColor: query ? 'rgba(240,185,11,0.45)' : 'var(--border)',
+            boxShadow: query ? '0 0 0 3px var(--accent-ring)' : 'none',
+            borderColor: query ? 'var(--accent-border)' : 'var(--border)',
           }}
           aria-label={t('dashboard.searchPlaceholder')}
         />
@@ -79,7 +79,7 @@ export function DashboardSearch() {
           style={{
             background: 'var(--surface)',
             borderColor: 'var(--border)',
-            boxShadow: '0 12px 40px rgba(0,0,0,0.28)',
+            boxShadow: 'var(--card-shadow)',
           }}
         >
           {results.length === 0 ? (
@@ -96,7 +96,7 @@ export function DashboardSearch() {
                     <button
                       type="button"
                       onClick={() => openAsset(coin)}
-                      className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-white/[0.04]"
+                      className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors row-hover"
                     >
                       <span
                         className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0"

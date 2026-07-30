@@ -97,6 +97,11 @@ export function displayKlinesForCandles(klines: Kline[], mode: CandleMode): Klin
   return mode === 'heikinAshi' ? heikinAshiToKlines(klines) : klines;
 }
 
+/** Close-price series for line/area chart modes. */
+export function klinesToCloseLine(klines: Kline[]) {
+  return klines.map(k => ({ time: toChartTime(k.openTime), value: k.close }));
+}
+
 export function computeAllChartSeries(klines: Kline[], settings: IndicatorSettings) {
   const candleSource = displayKlinesForCandles(klines, settings.candleMode);
   return {

@@ -15,9 +15,9 @@ export function NotFoundPage() {
         <AlertCircle className="h-10 w-10 mx-auto mb-4" style={{ color: '#ef5350' }} />
         <h1 className="text-xl font-bold mb-2" style={{ color: 'var(--text)' }}>{t('notFound.title')}</h1>
         <p className="text-sm mb-6" style={{ color: 'var(--muted)' }}>{t('notFound.message')}</p>
-        <Link href="/">
-          <Button>{t('notFound.back')}</Button>
-        </Link>
+        <Button asChild>
+          <Link href="/">{t('notFound.back')}</Link>
+        </Button>
       </div>
     </div>
   );

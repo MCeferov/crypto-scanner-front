@@ -21,7 +21,7 @@ export function calculateBollingerBands(
     const std = Math.sqrt(variance);
     const upper = mean + stdDev * std;
     const lower = mean - stdDev * std;
-    const bandwidth = (upper - lower) / mean;
+    const bandwidth = mean !== 0 ? (upper - lower) / mean : 0;
     const percentB = upper !== lower ? (closes[i] - lower) / (upper - lower) : 0.5;
     results.push({ upper, middle: mean, lower, bandwidth, percentB });
   }

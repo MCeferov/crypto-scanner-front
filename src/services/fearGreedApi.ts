@@ -12,8 +12,11 @@ export async function fetchFearGreedIndex(): Promise<FearGreedData | null> {
     const json = await res.json();
     const item = json?.data?.[0];
     if (!item) return null;
+    const value = parseInt(item.value, 10);
+    // NaN would silently flow into every sentiment comparison downstream.
+    if (!Number.isFinite(value)) return null;
     return {
-      value: parseInt(item.value, 10),
+      value,
       classification: item.value_classification ?? 'Neutral',
     };
   } catch {

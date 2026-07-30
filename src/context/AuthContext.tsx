@@ -84,8 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await fetchMe();
       setUser(me);
-    } catch {
-      clearSession();
+    } catch (err) {
+      // Only a definitive auth rejection invalidates the session. A network
+      // blip or a restarting API must not log the user out.
+      if (err instanceof AuthApiError && (err.status === 401 || err.status === 403)) {
+        clearSession();
+      }
     } finally {
       setIsLoading(false);
     }
@@ -108,8 +112,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const revalidate = async () => {
       try {
         setUser(await fetchMe());
-      } catch {
-        clearSession();
+      } catch (err) {
+        if (err instanceof AuthApiError && (err.status === 401 || err.status === 403)) {
+          clearSession();
+        }
       }
     };
 

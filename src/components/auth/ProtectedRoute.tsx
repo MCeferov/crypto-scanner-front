@@ -18,7 +18,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         <div className="flex flex-col items-center gap-3">
           <div
             className="w-8 h-8 rounded-full border-2 animate-spin"
-            style={{ borderColor: 'rgba(240,185,11,.2)', borderTopColor: '#f0b90b' }}
+            style={{ borderColor: 'var(--accent-ring)', borderTopColor: 'var(--accent)' }}
           />
           <p className="text-sm" style={{ color: 'var(--muted)' }}>Loading session…</p>
         </div>

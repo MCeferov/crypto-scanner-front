@@ -6,18 +6,18 @@
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
-  --color-border: hsl(var(--border));
+  --color-border: hsl(var(--sh-border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
-  --color-muted: hsl(var(--muted));
+  --color-muted: hsl(var(--sh-muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-accent: hsl(var(--accent));
+  --color-accent: hsl(var(--sh-accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
@@ -31,6 +31,10 @@
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  /* Border tokens referenced by button/badge variants (border-primary-border etc.) */
+  --color-primary-border: hsl(224 80% 48%);
+  --color-secondary-border: hsl(var(--sh-border));
+  --color-destructive-border: hsl(354 70% 45%);
 }
 
 /* ─── Design tokens ───────────────────────────────────────────────
@@ -49,34 +53,47 @@
   --muted:       #5c708a;
   --dim:         #8fa3b8;
 
-  /* Accent */
-  --accent:      #f0b90b;
+  /* Accent — TradingView blue; professional terminal look, one accent only */
+  --accent:        #2962ff;
+  --accent-soft:   rgba(41, 98, 255, .10);
+  --accent-border: rgba(41, 98, 255, .30);
+  --accent-ring:   rgba(41, 98, 255, .15);
 
-  /* Chart / detail page */
+  /* Interaction */
+  --button-outline: #c8d3e0;
+  --elevate-1: rgba(15, 23, 42, .05);
+  --elevate-2: rgba(15, 23, 42, .09);
+  --row-hover: rgba(15, 23, 42, .04);
+
+  /* Chart / detail page — same family as the main surfaces so navigating
+     to a coin page doesn't shift the whole app's hue */
   --chart-bg:           #ffffff;
-  --chart-surface:      #f1f5f9;
-  --chart-border:       #e2e8f0;
-  --chart-text:         #64748b;
-  --chart-text-dim:     #94a3b8;
-  --chart-text-bright:  #0f172a;
+  --chart-surface:      #f4f6f9;
+  --chart-border:       #dde3ec;
+  --chart-text:         #5c708a;
+  --chart-text-dim:     #8fa3b8;
+  --chart-text-bright:  #1a2332;
 
   --card-shadow: 0 8px 32px rgba(15, 23, 42, 0.08);
 
-  /* Tailwind CSS vars */
+  /* Tailwind CSS vars — sh- prefix: these are HSL triplets consumed via
+     hsl(var(--sh-*)) in @theme inline. They MUST NOT share names with the
+     raw hex design tokens above (--border/--muted/--accent), which are used
+     directly in inline styles — a name collision silently breaks both. */
   --background:       210 33% 97%;
   --foreground:       215 28% 15%;
   --card:             0 0% 100%;
   --card-foreground:  215 28% 15%;
-  --border:           214 24% 88%;
+  --sh-border:        214 24% 88%;
   --input:            214 24% 88%;
-  --ring:             43 90% 50%;
-  --primary:          43 90% 50%;
-  --primary-foreground: 215 28% 15%;
+  --ring:             224 100% 58%;
+  --primary:          224 100% 58%;
+  --primary-foreground: 0 0% 100%;
   --secondary:        214 20% 94%;
   --secondary-foreground: 215 18% 40%;
-  --muted:            214 20% 94%;
+  --sh-muted:         214 20% 94%;
   --muted-foreground: 215 14% 46%;
-  --accent:           214 20% 94%;
+  --sh-accent:        214 20% 94%;
   --accent-foreground: 215 28% 15%;
   --destructive:      354 80% 55%;
   --destructive-foreground: 0 0% 100%;
@@ -103,31 +120,43 @@
   --muted:       #7e95ad;
   --dim:         #4a5e72;
 
-  /* Chart / detail page */
-  --chart-bg:           #0d1117;
-  --chart-surface:      #161b22;
-  --chart-border:       #21262d;
-  --chart-text:         #8b949e;
-  --chart-text-dim:     #484f58;
-  --chart-text-bright:  #e6edf3;
+  /* Accent — slightly lighter blue for dark surfaces */
+  --accent:        #3d78ff;
+  --accent-soft:   rgba(61, 120, 255, .12);
+  --accent-border: rgba(61, 120, 255, .32);
+  --accent-ring:   rgba(61, 120, 255, .18);
+
+  /* Interaction */
+  --button-outline: #2d3f52;
+  --elevate-1: rgba(255, 255, 255, .05);
+  --elevate-2: rgba(255, 255, 255, .09);
+  --row-hover: rgba(255, 255, 255, .045);
+
+  /* Chart / detail page — unified with the main navy surfaces */
+  --chart-bg:           #0f1624;
+  --chart-surface:      #152232;
+  --chart-border:       #253347;
+  --chart-text:         #7e95ad;
+  --chart-text-dim:     #4a5e72;
+  --chart-text-bright:  #d8e4f0;
 
   --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
 
-  /* Tailwind CSS vars */
+  /* Tailwind CSS vars (see note in :root about the sh- prefix) */
   --background:       212 28% 11%;
   --foreground:       210 33% 89%;
   --card:             212 26% 15%;
   --card-foreground:  210 33% 89%;
-  --border:           211 24% 22%;
+  --sh-border:        211 24% 22%;
   --input:            211 24% 22%;
-  --ring:             43 90% 50%;
-  --primary:          43 90% 50%;
-  --primary-foreground: 212 28% 11%;
+  --ring:             224 100% 62%;
+  --primary:          224 100% 62%;
+  --primary-foreground: 0 0% 100%;
   --secondary:        212 24% 20%;
   --secondary-foreground: 210 20% 72%;
-  --muted:            212 22% 18%;
+  --sh-muted:         212 22% 18%;
   --muted-foreground: 212 18% 56%;
-  --accent:           212 22% 20%;
+  --sh-accent:        212 22% 20%;
   --accent-foreground: 210 33% 89%;
   --destructive:      354 80% 60%;
   --destructive-foreground: 0 0% 100%;
@@ -147,7 +176,37 @@
   ::-webkit-scrollbar-track { background: var(--bg); }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--border-lite); }
+  /* Native <select> dropdown options otherwise render OS-white in dark mode */
+  select option {
+    background: var(--surface);
+    color: var(--text);
+  }
 }
+
+/* ─── Interaction utilities (referenced by shadcn button/badge) ──── */
+.hover-elevate,
+.active-elevate-2 {
+  position: relative;
+}
+.hover-elevate::after,
+.active-elevate-2::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: transparent;
+  transition: background-color .15s ease;
+}
+.hover-elevate:hover::after { background: var(--elevate-1); }
+.active-elevate-2:active::after { background: var(--elevate-2); }
+
+/* Theme-aware row hover (white/4% was invisible in light mode) */
+.row-hover:hover { background-color: var(--row-hover); }
+
+/* Hide scrollbars where a scroll affordance is unwanted (stat strips) */
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
 
 /* ─── RSI cells ─────────────────────────────────────────────────── */
 .rsi-strong-oversold  { background: rgba(38,166,154,.18); color: #26a69a; }
@@ -169,13 +228,20 @@
 .flash-up   { animation: flashGreen 0.8s ease-out; }
 .flash-down { animation: flashRed   0.8s ease-out; }
 
+/* ─── Table body: uniform surface + hairline separators (no zebra) ─ */
+.heatmap-table tbody td {
+  border-bottom: 1px solid var(--border);
+}
+
 /* ─── Table header ──────────────────────────────────────────────── */
 .heatmap-table thead th {
   position: sticky;
   top: 0;
-  z-index: 10;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
+  /* Must beat the sticky body cells (z-10) everywhere, not only where the
+     inline z-20 headers happen to overlap them. */
+  z-index: 30;
+  background: var(--elevated);
+  border-bottom: 2px solid var(--border);
 }
 
 /* ─── Skeleton loader ───────────────────────────────────────────── */
@@ -190,10 +256,39 @@
   border-radius: 4px;
 }
 
+/* ─── Access gate ───────────────────────────────────────────────── */
+.gate-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: .3;
+  pointer-events: none;
+}
+.gate-glow-a {
+  width: 420px; height: 420px;
+  background: radial-gradient(circle, rgba(41,98,255,.20), transparent 70%);
+  top: -120px; right: -80px;
+}
+.gate-glow-b {
+  width: 380px; height: 380px;
+  background: radial-gradient(circle, rgba(38,166,154,.10), transparent 70%);
+  bottom: -140px; left: -100px;
+}
+@keyframes gateShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
+.gate-shake { animation: gateShake .45s ease; }
+.gate-screen { transition: opacity .35s ease, transform .35s ease; }
+.gate-leave { opacity: 0; transform: scale(1.02); }
+
 /* ─── Loading progress bar ──────────────────────────────────────── */
 .loading-progress {
   height: 3px;
-  background: linear-gradient(90deg, #f0b90b, #f3a52f);
+  background: var(--accent);
   border-radius: 2px;
   transition: width 0.3s ease;
 }

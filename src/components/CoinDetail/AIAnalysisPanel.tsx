@@ -96,7 +96,7 @@ export function AIAnalysisPanel({ analysis, coin, loading }: AIAnalysisPanelProp
               {sideLabel(t, coin.confidenceSide)}
             </span>
             <span className="font-mono font-bold text-sm" style={{
-              color: coin.confidence >= 70 ? '#26a69a' : coin.confidence >= 50 ? '#f0b90b' : 'var(--chart-text-dim)',
+              color: coin.confidence >= 70 ? '#26a69a' : coin.confidence >= 50 ? '#f3a52f' : 'var(--chart-text-dim)',
             }}>
               {coin.confidence}%
             </span>
@@ -104,7 +104,7 @@ export function AIAnalysisPanel({ analysis, coin, loading }: AIAnalysisPanelProp
           <ScoreBar
             label={t('detail.totalConfidence')}
             value={coin.confidence}
-            color={coin.confidence >= 70 ? '#26a69a' : coin.confidence >= 50 ? '#f0b90b' : '#ef5350'}
+            color={coin.confidence >= 70 ? '#26a69a' : coin.confidence >= 50 ? '#f3a52f' : '#ef5350'}
           />
           <ul className="space-y-1 mt-2">
             {coin.confidenceReasons.slice(0, 6).map((r, i) => (
@@ -133,7 +133,7 @@ export function AIAnalysisPanel({ analysis, coin, loading }: AIAnalysisPanelProp
             <span style={{ color: 'var(--chart-text)' }}>{t('detail.mtfAlignment')}:</span>
             <span className="font-semibold" style={{
               color: coin.mtfAlignment === 'CONFLICT' ? '#ef5350'
-                : coin.mtfAlignment === 'ALIGNED' ? '#26a69a' : '#f0b90b',
+                : coin.mtfAlignment === 'ALIGNED' ? '#26a69a' : '#f3a52f',
             }}>
               {mtfLabel(t, coin.mtfAlignment)}
             </span>
@@ -143,9 +143,9 @@ export function AIAnalysisPanel({ analysis, coin, loading }: AIAnalysisPanelProp
           </div>
           {coin.reversalRisk !== 'NONE' && (
             <div className="rounded px-2 py-2 mb-2 text-xs" style={{
-              background: coin.reversalRisk === 'HIGH' ? 'rgba(239,83,80,.1)' : 'rgba(240,185,11,.08)',
-              border: `1px solid ${coin.reversalRisk === 'HIGH' ? 'rgba(239,83,80,.25)' : 'rgba(240,185,11,.2)'}`,
-              color: coin.reversalRisk === 'HIGH' ? '#ef5350' : '#f0b90b',
+              background: coin.reversalRisk === 'HIGH' ? 'rgba(239,83,80,.1)' : 'rgba(243,165,47,.08)',
+              border: `1px solid ${coin.reversalRisk === 'HIGH' ? 'rgba(239,83,80,.25)' : 'rgba(243,165,47,.2)'}`,
+              color: coin.reversalRisk === 'HIGH' ? '#ef5350' : '#f3a52f',
             }}>
               {t('detail.flipRiskLabel', { level: riskLabel(t, coin.reversalRisk) })}
             </div>

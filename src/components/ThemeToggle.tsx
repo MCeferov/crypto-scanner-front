@@ -10,7 +10,8 @@ export function ThemeToggle() {
   useEffect(() => setMounted(true), []);
 
   if (!mounted) {
-    return <Button variant="outline" size="sm" className="h-7 w-7 p-0" aria-hidden />;
+    // Placeholder must not be focusable while aria-hidden (WCAG 4.1.2).
+    return <Button variant="outline" size="sm" className="h-7 w-7 p-0" aria-hidden tabIndex={-1} disabled />;
   }
 
   const isDark = resolvedTheme === 'dark';

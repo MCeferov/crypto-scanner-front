@@ -16,7 +16,7 @@ export const FILTER_DEFS: FilterDef[] = [
   { key: 'topGainers', labelKey: 'filter.topGainers',  color: '#26a69a', group: 'default' },
   { key: 'topLosers',  labelKey: 'filter.topLosers',   color: '#ef5350', group: 'default' },
 
-  { key: 'highVolume',     labelKey: 'filter.highVolume',     color: '#f0b90b', group: 'optional' },
+  { key: 'highVolume',     labelKey: 'filter.highVolume',     color: '#f3a52f', group: 'optional' },
   { key: 'strongBuy',      labelKey: 'filter.strongBuy',      color: '#26a69a', group: 'optional' },
   { key: 'strongSell',     labelKey: 'filter.strongSell',     color: '#ef5350', group: 'optional' },
   { key: 'chartBuy',       labelKey: 'filter.chartBuy',       color: '#26a69a', group: 'optional' },
@@ -31,9 +31,9 @@ export const FILTER_DEFS: FilterDef[] = [
   { key: 'haSell',         labelKey: 'filter.haSell',         color: '#ef5350', group: 'optional' },
   { key: 'setupStrongBuy', labelKey: 'filter.setupStrongBuy', color: '#26a69a', group: 'optional' },
   { key: 'setupStrongSell',labelKey: 'filter.setupStrongSell',color: '#ef5350', group: 'optional' },
-  { key: 'candlesMature',  labelKey: 'filter.candlesMature',  color: '#f0b90b', group: 'optional' },
-  { key: 'candlesFresh',   labelKey: 'filter.candlesFresh',   color: '#f0b90b', group: 'optional' },
-  { key: 'syncStrong',     labelKey: 'filter.syncStrong',     color: '#f0b90b', group: 'optional' },
+  { key: 'candlesMature',  labelKey: 'filter.candlesMature',  color: '#f3a52f', group: 'optional' },
+  { key: 'candlesFresh',   labelKey: 'filter.candlesFresh',   color: '#f3a52f', group: 'optional' },
+  { key: 'syncStrong',     labelKey: 'filter.syncStrong',     color: '#f3a52f', group: 'optional' },
 ];
 
 export const DEFAULT_FILTER_KEYS = FILTER_DEFS.filter(f => f.group === 'default').map(f => f.key);

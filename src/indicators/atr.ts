@@ -35,5 +35,6 @@ export function getATRPercent(klines: Kline[], period = 14): number | null {
   const atr = getLatestATR(klines, period);
   if (atr === null || klines.length === 0) return null;
   const price = klines[klines.length - 1].close;
+  if (price <= 0) return null;
   return (atr / price) * 100;
 }

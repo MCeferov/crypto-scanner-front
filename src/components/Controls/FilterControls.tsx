@@ -6,15 +6,12 @@ import {
   FILTER_DEFS, DEFAULT_FILTER_KEYS, OPTIONAL_FILTER_KEYS, getFilterDef,
 } from './filterConfig';
 
-function hexToRgb(hex: string) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `${r},${g},${b}`;
-}
-
+/**
+ * One accent for every active filter — the previous per-filter colors
+ * (gold/teal/red chips side by side) read as noise, not information.
+ */
 function FilterButton({
-  f, active, onClick, onRemove, label,
+  active, onClick, onRemove, label,
 }: {
   f: { key: FilterKey; color?: string };
   active: boolean;
@@ -25,16 +22,12 @@ function FilterButton({
   return (
     <button
       onClick={onClick}
-      className="text-xs px-3 py-1.5 rounded-md transition-all flex items-center gap-1"
+      className="text-xs px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1 whitespace-nowrap"
       style={{
-        background: active
-          ? f.color ? `rgba(${hexToRgb(f.color)},0.12)` : 'var(--elevated)'
-          : 'var(--surface)',
-        color: active ? (f.color || 'var(--text)') : 'var(--muted)',
-        border: `1px solid ${active
-          ? f.color ? `rgba(${hexToRgb(f.color)},0.30)` : 'var(--border-lite)'
-          : 'var(--border)'}`,
-        fontWeight: active ? 600 : 400,
+        background: active ? 'var(--accent-soft)' : 'transparent',
+        color: active ? 'var(--accent)' : 'var(--muted)',
+        border: `1px solid ${active ? 'var(--accent-border)' : 'var(--border)'}`,
+        fontWeight: active ? 600 : 500,
       }}
     >
       {label}
@@ -43,7 +36,9 @@ function FilterButton({
           role="button"
           tabIndex={0}
           onClick={e => { e.stopPropagation(); onRemove(); }}
-          onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); onRemove(); } }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onRemove(); }
+          }}
           className="ml-0.5 opacity-50 hover:opacity-100"
           style={{ lineHeight: 1 }}
         >
@@ -133,8 +128,8 @@ export function FilterControls() {
                 <button
                   key={key}
                   onClick={() => { addOptionalFilter(key); setMenuOpen(false); }}
-                  className="w-full text-left text-xs px-3 py-2 hover:bg-white/[0.04] transition-colors"
-                  style={{ color: def.color || 'var(--text)' }}
+                  className="w-full text-left text-xs px-3 py-2 row-hover transition-colors"
+                  style={{ color: 'var(--text)' }}
                 >
                   {t(def.labelKey)}
                 </button>

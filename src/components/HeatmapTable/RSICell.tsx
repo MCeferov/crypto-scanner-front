@@ -19,7 +19,7 @@ export const RSICell = React.memo(function RSICell({ value, loaded }: RSICellPro
   if (value === null) {
     return (
       <td className="px-2 py-2 text-center" style={{ minWidth: 60 }}>
-        <span style={{ color: '#4a4f5c', fontSize: 12 }}>—</span>
+        <span style={{ color: 'var(--dim)', fontSize: 12 }}>—</span>
       </td>
     );
   }
@@ -38,7 +38,7 @@ export const RSICell = React.memo(function RSICell({ value, loaded }: RSICellPro
       >
         {formatRSI(value)}
         {label && (
-          <span className="text-[9px] font-bold opacity-80">{label}</span>
+          <span className="text-[10px] font-bold opacity-80">{label}</span>
         )}
       </div>
     </td>

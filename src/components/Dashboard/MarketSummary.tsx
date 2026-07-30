@@ -4,26 +4,29 @@ import { useT } from '../../context/LocaleContext';
 import { formatVolume, formatPercent } from '../../utils/formatters';
 import { isCryptoAsset } from '../../utils/assetHelpers';
 
+/**
+ * Slim terminal-style stat: no per-card borders — the strip reads as one
+ * ribbon with hairline dividers, like a TV market summary bar.
+ */
 function Stat({
-  label, value, sub, color, accent,
+  label, value, sub, color, divider,
 }: {
-  label: string; value: string; sub?: string; color?: string; accent?: boolean;
+  label: string; value: string; sub?: string; color?: string; accent?: boolean; divider?: boolean;
 }) {
   return (
     <div
-      className="flex flex-col justify-between rounded-xl px-4 py-3 min-w-[110px] flex-1"
-      style={{
-        background: accent ? 'var(--surface)' : 'var(--bg)',
-        border: `1px solid ${accent ? 'var(--border-lite)' : 'var(--border)'}`,
-      }}
+      className="flex flex-col justify-center px-4 py-2 min-w-[120px] shrink-0"
+      style={divider ? { borderLeft: '1px solid var(--border)' } : undefined}
     >
-      <span style={{ color: 'var(--dim)', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+      <span className="whitespace-nowrap" style={{ color: 'var(--dim)', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
         {label}
       </span>
-      <span className="font-mono font-bold mt-1 truncate" style={{ color: color || 'var(--text)', fontSize: 14 }}>
+      <span className="font-mono font-semibold mt-0.5 truncate" style={{ color: color || 'var(--text)', fontSize: 14 }}>
         {value}
+        {sub && (
+          <span className="font-normal ml-1.5" style={{ color: 'var(--dim)', fontSize: 10 }}>{sub}</span>
+        )}
       </span>
-      {sub && <span className="truncate mt-0.5" style={{ color: 'var(--dim)', fontSize: 10 }}>{sub}</span>}
     </div>
   );
 }
@@ -66,63 +69,83 @@ export function MarketSummary({
     return { pool: pool.length, gainers, losers, avgChange, topGainer, topLoser, totalVol, avgRsi, byType, cryptoCount: crypto.length };
   }, [coins, filteredCoins, assetCategory, useAllPool]);
 
-  if (!s) return null;
+  if (!s) {
+    // Skeleton with the same footprint — returning null made the strip pop
+    // in after load and shove the whole page down (visible CLS).
+    return (
+      <div
+        className={embedded ? '' : 'border-b'}
+        style={embedded ? undefined : { borderColor: 'var(--border)', background: 'var(--surface)' }}
+      >
+        <div className="flex items-stretch overflow-x-auto scrollbar-none max-w-[1920px] mx-auto">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div
+              key={i}
+              className="flex flex-col justify-center px-4 py-2 min-w-[120px] shrink-0"
+              style={i > 0 ? { borderLeft: '1px solid var(--border)' } : undefined}
+            >
+              <div className="skeleton h-2.5 w-14 mb-1.5" />
+              <div className="skeleton h-4 w-20" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const changeColor = s.avgChange > 0 ? '#26a69a' : s.avgChange < 0 ? '#ef5350' : 'var(--muted)';
 
+  const stats: { label: string; value: string; sub?: string; color?: string }[] = [
+    {
+      label: t('summary.assets'),
+      value: `${s.pool}`,
+      sub: useAllPool || assetCategory === 'all' ? t('summary.allCategories') : t(`category.${assetCategory}`),
+    },
+    {
+      label: t('summary.avg24h'),
+      value: formatPercent(s.avgChange),
+      sub: t('summary.gainersLosers', { gainers: s.gainers, losers: s.losers }),
+      color: changeColor,
+    },
+    ...(s.topGainer ? [{
+      label: t('summary.topGainer'),
+      value: s.topGainer.baseAsset,
+      sub: formatPercent(s.topGainer.priceChange24h),
+      color: '#26a69a',
+    }] : []),
+    ...(s.topLoser && s.topLoser.priceChange24h < 0 ? [{
+      label: t('summary.topLoser'),
+      value: s.topLoser.baseAsset,
+      sub: formatPercent(s.topLoser.priceChange24h),
+      color: '#ef5350',
+    }] : []),
+    ...(s.totalVol > 0 ? [{
+      label: t('summary.volume24h'),
+      value: formatVolume(s.totalVol),
+      sub: t('summary.total'),
+    }] : []),
+    ...(s.avgRsi !== null && s.cryptoCount > 0 ? [{
+      label: t('summary.cryptoRsi'),
+      value: s.avgRsi.toFixed(1),
+      sub: `${s.cryptoCount} ${t('summary.coins')}`,
+      color: s.avgRsi < 40 ? '#26a69a' : s.avgRsi > 60 ? '#ef5350' : undefined,
+    }] : []),
+    ...(useAllPool || assetCategory === 'all' ? [{
+      label: t('summary.categoryBreakdown'),
+      value: `${s.byType.crypto}·${s.byType.stock}·${s.byType.commodity}·${s.byType.forex}`,
+      sub: t('summary.categoryShort'),
+    }] : []),
+  ];
+
   return (
     <div
-      className={embedded ? 'px-4 py-4' : 'px-4 py-3 border-b'}
-      style={embedded ? undefined : { borderColor: 'var(--border)' }}
+      className={embedded ? '' : 'border-b'}
+      style={embedded ? undefined : { borderColor: 'var(--border)', background: 'var(--surface)' }}
     >
-      <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none max-w-[1920px] mx-auto">
-        <Stat
-          label={t('summary.assets')}
-          value={`${s.pool}`}
-          sub={useAllPool || assetCategory === 'all' ? t('summary.allCategories') : t(`category.${assetCategory}`)}
-          accent
-        />
-        <Stat
-          label={t('summary.avg24h')}
-          value={formatPercent(s.avgChange)}
-          sub={t('summary.gainersLosers', { gainers: s.gainers, losers: s.losers })}
-          color={changeColor}
-          accent
-        />
-        {s.topGainer && (
-          <Stat
-            label={t('summary.topGainer')}
-            value={s.topGainer.baseAsset}
-            sub={formatPercent(s.topGainer.priceChange24h)}
-            color="#26a69a"
-          />
-        )}
-        {s.topLoser && s.topLoser.priceChange24h < 0 && (
-          <Stat
-            label={t('summary.topLoser')}
-            value={s.topLoser.baseAsset}
-            sub={formatPercent(s.topLoser.priceChange24h)}
-            color="#ef5350"
-          />
-        )}
-        {s.totalVol > 0 && (
-          <Stat label={t('summary.volume24h')} value={formatVolume(s.totalVol)} sub={t('summary.total')} />
-        )}
-        {s.avgRsi !== null && s.cryptoCount > 0 && (
-          <Stat
-            label={t('summary.cryptoRsi')}
-            value={s.avgRsi.toFixed(1)}
-            sub={`${s.cryptoCount} ${t('summary.coins')}`}
-            color={s.avgRsi < 40 ? '#26a69a' : s.avgRsi > 60 ? '#ef5350' : 'var(--muted)'}
-          />
-        )}
-        {(useAllPool || assetCategory === 'all') && (
-          <Stat
-            label={t('summary.categoryBreakdown')}
-            value={`${s.byType.crypto}·${s.byType.stock}·${s.byType.commodity}·${s.byType.forex}`}
-            sub={t('summary.categoryShort')}
-          />
-        )}
+      <div className="flex items-stretch overflow-x-auto scrollbar-none max-w-[1920px] mx-auto">
+        {stats.map((st, i) => (
+          <Stat key={st.label} {...st} divider={i > 0} />
+        ))}
       </div>
     </div>
   );

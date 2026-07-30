@@ -20,7 +20,9 @@ export function calculateRSI(closes: number[], period = 14): number[] {
   avgLoss /= period;
 
   const computeRSI = (ag: number, al: number) => {
-    if (al === 0) return 100;
+    // Flat series (no gains AND no losses) is neutral, not overbought —
+    // returning 100 here made non-trading assets emit SELL signals.
+    if (al === 0) return ag === 0 ? 50 : 100;
     const rs = ag / al;
     return 100 - 100 / (1 + rs);
   };

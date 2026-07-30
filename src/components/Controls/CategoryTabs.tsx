@@ -20,8 +20,15 @@ export function CategoryTabs() {
     return { all: coins.length, crypto, stock, commodity, forex };
   }, [coins]);
 
+  // Segmented control — one container, flat buttons; reads as a single
+  // professional widget instead of five floating pills.
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-0.5" role="tablist" aria-label="Asset categories">
+    <div
+      className="inline-flex items-center gap-0.5 p-0.5 rounded-lg overflow-x-auto scrollbar-none"
+      role="tablist"
+      aria-label="Asset categories"
+      style={{ background: 'var(--elevated)', border: '1px solid var(--border)' }}
+    >
       {TABS.map(tab => {
         const active = assetCategory === tab;
         return (
@@ -30,15 +37,18 @@ export function CategoryTabs() {
             role="tab"
             aria-selected={active}
             onClick={() => setAssetCategory(tab)}
-            className="shrink-0 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-150"
+            className="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 whitespace-nowrap"
             style={{
-              background: active ? 'rgba(240,185,11,.15)' : 'var(--elevated)',
-              color: active ? '#f0b90b' : 'var(--muted)',
-              border: `1px solid ${active ? 'rgba(240,185,11,.4)' : 'var(--border)'}`,
+              background: active ? 'var(--surface)' : 'transparent',
+              color: active ? 'var(--text)' : 'var(--muted)',
+              boxShadow: active ? '0 1px 3px rgba(15,23,42,.12)' : 'none',
+              fontWeight: active ? 600 : 500,
             }}
           >
             {t(`category.${tab}`)}
-            <span className="ml-1.5 font-mono text-[10px] opacity-70">{counts[tab]}</span>
+            <span className="ml-1.5 font-mono text-[10px]" style={{ color: active ? 'var(--accent)' : 'var(--dim)' }}>
+              {counts[tab]}
+            </span>
           </button>
         );
       })}

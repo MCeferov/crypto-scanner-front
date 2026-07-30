@@ -45,7 +45,10 @@ export interface TfAnalysis {
 
 export function analyzeTimeframe(klines: Kline[], tf: MtfTf): TfAnalysis {
   const empty: TfAnalysis = { tf, signal: 'NEUTRAL', score: 0, reasons: [] };
-  if (klines.length < 15) return empty;
+  // MACD needs 35 closes and StochRSI ~34 — below that the only contributor
+  // left is SuperTrend, whose seeded bullish start manufactured BUY signals
+  // on 15–34-candle series (newly listed assets, thin non-crypto feeds).
+  if (klines.length < 35) return empty;
 
   // Raw closes — cədvəl RSI / digər indikatorlarla eyni bazis (HA yalnız ayrı filtr)
   const closes = klines.map(k => k.close);

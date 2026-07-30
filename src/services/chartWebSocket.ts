@@ -17,9 +17,17 @@ export class ChartKlineWebSocket {
   connect() {
     if (this.destroyed) return;
     const stream = `${this.symbol.toLowerCase()}@kline_${this.interval}`;
-    this.ws = new WebSocket(`wss://stream.binance.com:9443/ws/${stream}`);
+    try {
+      this.ws = new WebSocket(`wss://stream.binance.com:9443/ws/${stream}`);
+    } catch {
+      // Invalid URL (bad symbol) — constructor throws synchronously; a raw
+      // throw here would unmount the chart subtree via the calling effect.
+      this.scheduleReconnect();
+      return;
+    }
 
     this.ws.onopen = () => { this.reconnectDelay = 1000; };
+    this.ws.onerror = () => { /* onclose fires after error and handles reconnect */ };
 
     this.ws.onmessage = (event) => {
       if (this.destroyed) return;
@@ -41,12 +49,16 @@ export class ChartKlineWebSocket {
     };
 
     this.ws.onclose = () => {
-      if (this.destroyed) return;
-      this.reconnectTimer = setTimeout(() => {
-        this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 30000);
-        this.connect();
-      }, this.reconnectDelay);
+      this.scheduleReconnect();
     };
+  }
+
+  private scheduleReconnect() {
+    if (this.destroyed) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 30000);
+      this.connect();
+    }, this.reconnectDelay);
   }
 
   destroy() {

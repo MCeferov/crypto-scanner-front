@@ -22,12 +22,31 @@ export function readKlineCache(ids: string[]): Map<string, Record<string, Kline[
   return out;
 }
 
+/**
+ * Persisting the full 1000-candle series for every asset × timeframe produced
+ * tens of MB of JSON — sessionStorage.setItem always threw QuotaExceededError
+ * (silently), so the warm-start cache never actually worked, while the
+ * JSON.stringify of the huge Map still blocked the main thread. Trimming to
+ * the last 400 candles keeps every indicator accurate (EMA200 included) and
+ * fits comfortably in the ~5MB quota.
+ */
+const PERSIST_CANDLES = 400;
+const MAX_PAYLOAD_CHARS = 4_000_000;
+
 export function writeKlineCache(map: Map<string, Record<string, Kline[]>>): void {
   try {
     const data: Record<string, Record<string, Kline[]>> = {};
-    map.forEach((v, k) => { data[k] = v; });
+    map.forEach((byTf, id) => {
+      const trimmed: Record<string, Kline[]> = {};
+      for (const [tf, klines] of Object.entries(byTf)) {
+        trimmed[tf] = klines.length > PERSIST_CANDLES ? klines.slice(-PERSIST_CANDLES) : klines;
+      }
+      data[id] = trimmed;
+    });
     const entry: CacheEntry = { at: Date.now(), data };
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(entry));
+    const payload = JSON.stringify(entry);
+    if (payload.length > MAX_PAYLOAD_CHARS) return;
+    sessionStorage.setItem(CACHE_KEY, payload);
   } catch { /* quota */ }
 }
 

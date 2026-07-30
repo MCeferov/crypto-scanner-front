@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthContext';
 import { LocaleProvider } from './context/LocaleContext';
 import { MarketProvider } from './context/MarketContext';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { AccessGate } from './components/auth/AccessGate';
 import { HomePage } from './pages/HomePage';
 import { CoinDetailPage } from './pages/CoinDetailPage';
 import { AssetDetailPage } from './pages/AssetDetailPage';
@@ -16,32 +17,21 @@ import { NotFoundPage } from './pages/not-found';
 const queryClient = new QueryClient();
 
 function AuthenticatedApp() {
+  // MarketProvider lives INSIDE the auth guard: unauthenticated visitors must
+  // not boot the whole market pipeline (WebSocket + kline batches) just to be
+  // redirected to /login a frame later.
   return (
-    <MarketProvider>
-      <Switch>
-        <Route path="/dashboard">
-          <ProtectedRoute>
-            <DashboardPage />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/">
-          <ProtectedRoute>
-            <HomePage />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/coin/:symbol">
-          <ProtectedRoute>
-            <CoinDetailPage />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/asset/:type/:symbol">
-          <ProtectedRoute>
-            <AssetDetailPage />
-          </ProtectedRoute>
-        </Route>
-        <Route component={NotFoundPage} />
-      </Switch>
-    </MarketProvider>
+    <ProtectedRoute>
+      <MarketProvider>
+        <Switch>
+          <Route path="/dashboard" component={DashboardPage} />
+          <Route path="/" component={HomePage} />
+          <Route path="/coin/:symbol" component={CoinDetailPage} />
+          <Route path="/asset/:type/:symbol" component={AssetDetailPage} />
+          <Route component={NotFoundPage} />
+        </Switch>
+      </MarketProvider>
+    </ProtectedRoute>
   );
 }
 
@@ -49,17 +39,19 @@ export default function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="crypto-scanner-theme">
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <LocaleProvider>
-            <Switch>
-              <Route path="/login" component={LoginPage} />
-              <Route path="/register" component={RegisterPage} />
-              <Route>
-                <AuthenticatedApp />
-              </Route>
-            </Switch>
-          </LocaleProvider>
-        </AuthProvider>
+        <AccessGate>
+          <AuthProvider>
+            <LocaleProvider>
+              <Switch>
+                <Route path="/login" component={LoginPage} />
+                <Route path="/register" component={RegisterPage} />
+                <Route>
+                  <AuthenticatedApp />
+                </Route>
+              </Switch>
+            </LocaleProvider>
+          </AuthProvider>
+        </AccessGate>
       </QueryClientProvider>
     </ThemeProvider>
   );

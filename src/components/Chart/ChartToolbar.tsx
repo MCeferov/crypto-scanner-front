@@ -1,4 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  CandlestickChart, LineChart, AreaChart, ChevronDown,
+  SlidersHorizontal, Camera, Maximize2, Check, Settings2,
+} from 'lucide-react';
 import {
   CHART_TIMEFRAMES,
   type CandleMode,
@@ -14,21 +18,71 @@ interface ChartToolbarProps {
   onToggleIndicator: (key: IndicatorKey) => void;
   onTogglePanel: (key: 'rsi' | 'macd' | 'stochRsi') => void;
   onUpdateSettings: (partial: Partial<IndicatorSettings>) => void;
+  logScale: boolean;
+  onToggleLogScale: () => void;
+  onScreenshot: () => void;
+  onFullscreen: () => void;
 }
 
-const OVERLAY_INDICATORS: { key: IndicatorKey; label: string }[] = [
-  { key: 'volume', label: 'Volume' },
-  { key: 'superTrend', label: 'SuperTrend' },
+const CHART_TYPES: { key: CandleMode; label: string; icon: React.ReactNode }[] = [
+  { key: 'normal', label: 'Candles', icon: <CandlestickChart size={14} /> },
+  { key: 'heikinAshi', label: 'Heikin Ashi', icon: <CandlestickChart size={14} /> },
+  { key: 'line', label: 'Line', icon: <LineChart size={14} /> },
+  { key: 'area', label: 'Area', icon: <AreaChart size={14} /> },
 ];
 
-const PANEL_INDICATORS: { key: IndicatorKey; panelKey?: 'rsi' | 'macd' | 'stochRsi'; label: string }[] = [
-  { key: 'rsi', panelKey: 'rsi', label: 'RSI' },
-  { key: 'macd', panelKey: 'macd', label: 'MACD' },
-  { key: 'stochRsi', panelKey: 'stochRsi', label: 'Stoch RSI' },
-];
+/** Click-outside helper for the dropdown menus. */
+function useClickOutside(open: boolean, onClose: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, onClose]);
+  return ref;
+}
 
-function isEnabled(settings: IndicatorSettings, key: IndicatorKey): boolean {
-  return settings[key].enabled;
+function ToolButton({
+  active, onClick, title, children,
+}: {
+  active?: boolean; onClick: () => void; title?: string; children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors"
+      style={{
+        color: active ? 'var(--accent)' : 'var(--chart-text)',
+        background: active ? 'var(--accent-soft)' : 'transparent',
+      }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--chart-surface)'; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuSurface({ children, width = 260 }: { children: React.ReactNode; width?: number }) {
+  return (
+    <div
+      className="absolute top-full left-0 mt-1.5 z-40 rounded-lg border py-1.5 text-xs"
+      style={{
+        width,
+        background: 'var(--surface)',
+        borderColor: 'var(--chart-border)',
+        boxShadow: 'var(--card-shadow)',
+        color: 'var(--chart-text)',
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 function NumInput({
@@ -38,8 +92,8 @@ function NumInput({
   onChange: (n: number) => void;
 }) {
   return (
-    <label className="flex items-center gap-1.5">
-      <span className="whitespace-nowrap opacity-80">{label}</span>
+    <label className="flex items-center justify-between gap-2">
+      <span className="whitespace-nowrap" style={{ color: 'var(--chart-text)' }}>{label}</span>
       <input
         type="number"
         min={min}
@@ -51,164 +105,224 @@ function NumInput({
           if (!Number.isFinite(n)) return;
           onChange(Math.min(max, Math.max(min, n)));
         }}
-        className="w-14 px-1.5 py-0.5 rounded border"
-        style={{ background: 'var(--chart-surface)', borderColor: 'var(--chart-border)', color: 'var(--chart-text-bright)' }}
+        className="w-16 px-1.5 py-1 rounded border text-right"
+        style={{ background: 'var(--chart-bg)', borderColor: 'var(--chart-border)', color: 'var(--chart-text-bright)' }}
       />
     </label>
   );
 }
 
+interface IndicatorRowDef {
+  key: IndicatorKey;
+  panelKey?: 'rsi' | 'macd' | 'stochRsi';
+  label: string;
+  settingsBody?: (s: IndicatorSettings, update: (p: Partial<IndicatorSettings>) => void) => React.ReactNode;
+}
+
+const INDICATOR_ROWS: IndicatorRowDef[] = [
+  { key: 'volume', label: 'Volume' },
+  {
+    key: 'bollingerBands', label: 'Bollinger Bands',
+    settingsBody: (s, u) => (
+      <>
+        <NumInput label="Period" value={s.bollingerBands.period} min={2} max={100}
+          onChange={period => u({ bollingerBands: { ...s.bollingerBands, period } })} />
+        <NumInput label="StdDev" value={s.bollingerBands.stdDev} min={0.5} max={5} step={0.1}
+          onChange={stdDev => u({ bollingerBands: { ...s.bollingerBands, stdDev } })} />
+      </>
+    ),
+  },
+  {
+    key: 'superTrend', label: 'SuperTrend',
+    settingsBody: (s, u) => (
+      <>
+        <NumInput label="Period" value={s.superTrend.period} min={2} max={50}
+          onChange={period => u({ superTrend: { ...s.superTrend, period } })} />
+        <NumInput label="Multiplier" value={s.superTrend.multiplier} min={0.5} max={10} step={0.1}
+          onChange={multiplier => u({ superTrend: { ...s.superTrend, multiplier } })} />
+      </>
+    ),
+  },
+  {
+    key: 'rsi', panelKey: 'rsi', label: 'RSI',
+    settingsBody: (s, u) => (
+      <>
+        <NumInput label="Period" value={s.rsi.period} min={2} max={100}
+          onChange={period => u({ rsi: { ...s.rsi, period } })} />
+        <NumInput label="Oversold" value={s.rsi.oversold} min={1} max={49}
+          onChange={oversold => u({ rsi: { ...s.rsi, oversold } })} />
+        <NumInput label="Overbought" value={s.rsi.overbought} min={51} max={99}
+          onChange={overbought => u({ rsi: { ...s.rsi, overbought } })} />
+      </>
+    ),
+  },
+  {
+    key: 'macd', panelKey: 'macd', label: 'MACD',
+    settingsBody: (s, u) => (
+      <>
+        <NumInput label="Fast" value={s.macd.fast} min={2} max={50}
+          onChange={fast => u({ macd: { ...s.macd, fast } })} />
+        <NumInput label="Slow" value={s.macd.slow} min={2} max={100}
+          onChange={slow => u({ macd: { ...s.macd, slow } })} />
+        <NumInput label="Signal" value={s.macd.signal} min={2} max={50}
+          onChange={signal => u({ macd: { ...s.macd, signal } })} />
+      </>
+    ),
+  },
+  {
+    key: 'stochRsi', panelKey: 'stochRsi', label: 'Stoch RSI',
+    settingsBody: (s, u) => (
+      <>
+        <NumInput label="RSI period" value={s.stochRsi.rsiPeriod} min={2} max={50}
+          onChange={rsiPeriod => u({ stochRsi: { ...s.stochRsi, rsiPeriod } })} />
+        <NumInput label="Stoch period" value={s.stochRsi.stochPeriod} min={2} max={50}
+          onChange={stochPeriod => u({ stochRsi: { ...s.stochRsi, stochPeriod } })} />
+        <NumInput label="%K smooth" value={s.stochRsi.kSmooth} min={1} max={20}
+          onChange={kSmooth => u({ stochRsi: { ...s.stochRsi, kSmooth } })} />
+        <NumInput label="%D smooth" value={s.stochRsi.dSmooth} min={1} max={20}
+          onChange={dSmooth => u({ stochRsi: { ...s.stochRsi, dSmooth } })} />
+      </>
+    ),
+  },
+];
+
 export function ChartToolbar({
-  timeframe, onTimeframeChange, settings, onToggleIndicator, onTogglePanel, onUpdateSettings,
+  timeframe, onTimeframeChange, settings, onToggleIndicator, onUpdateSettings,
+  logScale, onToggleLogScale, onScreenshot, onFullscreen,
 }: ChartToolbarProps) {
-  const [showSettings, setShowSettings] = useState(false);
-  const candleMode: CandleMode = settings.candleMode;
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [indOpen, setIndOpen] = useState(false);
+  const [expanded, setExpanded] = useState<IndicatorKey | null>(null);
+
+  const typeRef = useClickOutside(typeOpen, () => setTypeOpen(false));
+  const indRef = useClickOutside(indOpen, () => setIndOpen(false));
+
+  const currentType = CHART_TYPES.find(ct => ct.key === settings.candleMode) ?? CHART_TYPES[0];
+  const enabledCount = INDICATOR_ROWS.filter(r => settings[r.key].enabled).length;
 
   return (
     <div
-      className="flex items-center justify-between gap-3 px-3 py-2 border-b flex-wrap"
+      className="flex items-center gap-0.5 px-2 py-1 border-b flex-wrap"
       style={{ borderColor: 'var(--chart-border)', background: 'var(--chart-bg)' }}
     >
-      <div className="flex items-center gap-1">
+      {/* Timeframes */}
+      <div className="flex items-center">
         {CHART_TIMEFRAMES.map(tf => (
-          <button
+          <ToolButton
             key={tf.key}
+            active={timeframe === tf.key}
             onClick={() => onTimeframeChange(tf.key)}
-            className="px-2.5 py-1 rounded text-xs font-medium transition-all"
-            style={{
-              background: timeframe === tf.key ? 'rgba(240,185,11,0.12)' : 'transparent',
-              color: timeframe === tf.key ? '#f0b90b' : 'var(--chart-text)',
-              border: `1px solid ${timeframe === tf.key ? 'rgba(240,185,11,0.25)' : 'transparent'}`,
-            }}
           >
             {tf.label}
-          </button>
+          </ToolButton>
         ))}
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--chart-text-dim)' }}>
-          Candles
-        </span>
-        {([
-          { key: 'normal' as const, label: 'Normal' },
-          { key: 'heikinAshi' as const, label: 'Heikin Ashi' },
-        ]).map(opt => (
-          <button
-            key={opt.key}
-            onClick={() => onUpdateSettings({ candleMode: opt.key })}
-            className="px-2 py-1 rounded text-xs transition-all"
-            style={{
-              background: candleMode === opt.key ? 'rgba(240,185,11,0.12)' : 'var(--chart-surface)',
-              color: candleMode === opt.key ? '#f0b90b' : 'var(--chart-text)',
-              border: `1px solid ${candleMode === opt.key ? 'rgba(240,185,11,0.25)' : 'var(--chart-border)'}`,
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <span className="w-px h-5 mx-1" style={{ background: 'var(--chart-border)' }} />
 
-        <div className="w-px h-4 mx-1" style={{ background: 'var(--chart-border)' }} />
-
-        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--chart-text-dim)' }} title="Grafik üzərində göstərilir">Overlay</span>
-        {OVERLAY_INDICATORS.map(ind => (
-          <button
-            key={ind.key}
-            onClick={() => onToggleIndicator(ind.key)}
-            className="px-2 py-1 rounded text-xs transition-all"
-            style={{
-              background: isEnabled(settings, ind.key) ? 'rgba(38,166,154,0.12)' : 'var(--chart-surface)',
-              color: isEnabled(settings, ind.key) ? '#26a69a' : 'var(--chart-text)',
-              border: `1px solid ${isEnabled(settings, ind.key) ? 'rgba(38,166,154,0.25)' : 'var(--chart-border)'}`,
-            }}
-          >
-            {ind.label}
-          </button>
-        ))}
-
-        <div className="w-px h-4 mx-1" style={{ background: 'var(--chart-border)' }} />
-
-        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--chart-text-dim)' }} title="Aşağıda ayrıca panel kimi göstərilir">Panels</span>
-        {PANEL_INDICATORS.map(ind => (
-          <button
-            key={ind.key}
-            onClick={() => onToggleIndicator(ind.key)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              if (ind.panelKey) onTogglePanel(ind.panelKey);
-            }}
-            title={ind.panelKey ? 'Right-click to toggle panel visibility' : undefined}
-            className="px-2 py-1 rounded text-xs transition-all"
-            style={{
-              background: isEnabled(settings, ind.key) ? 'rgba(124,77,255,0.12)' : 'var(--chart-surface)',
-              color: isEnabled(settings, ind.key) ? '#7c4dff' : 'var(--chart-text)',
-              border: `1px solid ${isEnabled(settings, ind.key) ? 'rgba(124,77,255,0.25)' : 'var(--chart-border)'}`,
-              opacity: ind.panelKey && !settings[ind.panelKey].panel ? 0.5 : 1,
-            }}
-          >
-            {ind.label}
-          </button>
-        ))}
-
-        <button
-          onClick={() => setShowSettings(s => !s)}
-          className="px-2 py-1 rounded text-xs border transition-all hover:opacity-80"
-          style={{ color: 'var(--chart-text)', borderColor: 'var(--chart-border)' }}
-        >
-          ⚙ Settings
-        </button>
+      {/* Chart type dropdown */}
+      <div className="relative" ref={typeRef}>
+        <ToolButton active={typeOpen} onClick={() => setTypeOpen(o => !o)} title="Chart type">
+          {currentType.icon}
+          <span className="hidden sm:inline">{currentType.label}</span>
+          <ChevronDown size={12} />
+        </ToolButton>
+        {typeOpen && (
+          <MenuSurface width={180}>
+            {CHART_TYPES.map(ct => (
+              <button
+                key={ct.key}
+                type="button"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left row-hover"
+                style={{ color: settings.candleMode === ct.key ? 'var(--accent)' : 'var(--chart-text-bright)' }}
+                onClick={() => { onUpdateSettings({ candleMode: ct.key }); setTypeOpen(false); }}
+              >
+                {ct.icon}
+                <span className="flex-1">{ct.label}</span>
+                {settings.candleMode === ct.key && <Check size={13} />}
+              </button>
+            ))}
+          </MenuSurface>
+        )}
       </div>
 
-      {showSettings && (
-        <div
-          className="w-full flex flex-col gap-3 pt-2 border-t text-xs"
-          style={{ borderColor: 'var(--chart-border)', color: 'var(--chart-text)' }}
-        >
-          <div className="flex gap-4 flex-wrap items-center">
-            <span className="font-semibold text-[10px] uppercase tracking-wider" style={{ color: 'var(--chart-text-dim)', minWidth: 56 }}>RSI</span>
-            <NumInput label="Period" value={settings.rsi.period} min={2} max={100}
-              onChange={period => onUpdateSettings({ rsi: { ...settings.rsi, period } })} />
-            <NumInput label="Oversold" value={settings.rsi.oversold} min={1} max={49}
-              onChange={oversold => onUpdateSettings({ rsi: { ...settings.rsi, oversold } })} />
-            <NumInput label="Overbought" value={settings.rsi.overbought} min={51} max={99}
-              onChange={overbought => onUpdateSettings({ rsi: { ...settings.rsi, overbought } })} />
-          </div>
+      {/* Indicators dropdown */}
+      <div className="relative" ref={indRef}>
+        <ToolButton active={indOpen} onClick={() => setIndOpen(o => !o)} title="Indicators">
+          <SlidersHorizontal size={14} />
+          <span className="hidden sm:inline">Indicators</span>
+          {enabledCount > 0 && (
+            <span
+              className="min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center"
+              style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
+            >
+              {enabledCount}
+            </span>
+          )}
+        </ToolButton>
+        {indOpen && (
+          <MenuSurface width={280}>
+            {INDICATOR_ROWS.map(row => {
+              const enabled = settings[row.key].enabled;
+              const isExpanded = expanded === row.key;
+              return (
+                <div key={row.key}>
+                  <div className="flex items-center px-3 py-1.5 gap-2 row-hover">
+                    <button
+                      type="button"
+                      className="flex items-center gap-2.5 flex-1 text-left"
+                      onClick={() => onToggleIndicator(row.key)}
+                    >
+                      <span
+                        className="w-4 h-4 rounded flex items-center justify-center border transition-colors"
+                        style={{
+                          background: enabled ? 'var(--accent)' : 'transparent',
+                          borderColor: enabled ? 'var(--accent)' : 'var(--chart-border)',
+                        }}
+                      >
+                        {enabled && <Check size={11} color="#fff" />}
+                      </span>
+                      <span style={{ color: 'var(--chart-text-bright)' }}>{row.label}</span>
+                    </button>
+                    {row.settingsBody && (
+                      <button
+                        type="button"
+                        title={`${row.label} settings`}
+                        onClick={() => setExpanded(isExpanded ? null : row.key)}
+                        className="p-1 rounded transition-colors"
+                        style={{ color: isExpanded ? 'var(--accent)' : 'var(--chart-text-dim)' }}
+                      >
+                        <Settings2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                  {isExpanded && row.settingsBody && (
+                    <div
+                      className="mx-3 mb-2 px-3 py-2.5 rounded-md flex flex-col gap-2"
+                      style={{ background: 'var(--chart-surface)' }}
+                    >
+                      {row.settingsBody(settings, onUpdateSettings)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </MenuSurface>
+        )}
+      </div>
 
-          <div className="flex gap-4 flex-wrap items-center">
-            <span className="font-semibold text-[10px] uppercase tracking-wider" style={{ color: 'var(--chart-text-dim)', minWidth: 56 }}>MACD</span>
-            <NumInput label="Fast" value={settings.macd.fast} min={2} max={50}
-              onChange={fast => onUpdateSettings({ macd: { ...settings.macd, fast } })} />
-            <NumInput label="Slow" value={settings.macd.slow} min={2} max={100}
-              onChange={slow => onUpdateSettings({ macd: { ...settings.macd, slow } })} />
-            <NumInput label="Signal" value={settings.macd.signal} min={2} max={50}
-              onChange={signal => onUpdateSettings({ macd: { ...settings.macd, signal } })} />
-          </div>
+      <span className="flex-1" />
 
-          <div className="flex gap-4 flex-wrap items-center">
-            <span className="font-semibold text-[10px] uppercase tracking-wider" style={{ color: 'var(--chart-text-dim)', minWidth: 56 }}>Stoch</span>
-            <NumInput label="RSI" value={settings.stochRsi.rsiPeriod} min={2} max={50}
-              onChange={rsiPeriod => onUpdateSettings({ stochRsi: { ...settings.stochRsi, rsiPeriod } })} />
-            <NumInput label="Stoch" value={settings.stochRsi.stochPeriod} min={2} max={50}
-              onChange={stochPeriod => onUpdateSettings({ stochRsi: { ...settings.stochRsi, stochPeriod } })} />
-            <NumInput label="K" value={settings.stochRsi.kSmooth} min={1} max={20}
-              onChange={kSmooth => onUpdateSettings({ stochRsi: { ...settings.stochRsi, kSmooth } })} />
-            <NumInput label="D" value={settings.stochRsi.dSmooth} min={1} max={20}
-              onChange={dSmooth => onUpdateSettings({ stochRsi: { ...settings.stochRsi, dSmooth } })} />
-            <NumInput label="OS" value={settings.stochRsi.oversold} min={1} max={49}
-              onChange={oversold => onUpdateSettings({ stochRsi: { ...settings.stochRsi, oversold } })} />
-            <NumInput label="OB" value={settings.stochRsi.overbought} min={51} max={99}
-              onChange={overbought => onUpdateSettings({ stochRsi: { ...settings.stochRsi, overbought } })} />
-          </div>
-
-          <div className="flex gap-4 flex-wrap items-center">
-            <span className="font-semibold text-[10px] uppercase tracking-wider" style={{ color: 'var(--chart-text-dim)', minWidth: 56 }}>ST</span>
-            <NumInput label="Period" value={settings.superTrend.period} min={2} max={50}
-              onChange={period => onUpdateSettings({ superTrend: { ...settings.superTrend, period } })} />
-            <NumInput label="Mult" value={settings.superTrend.multiplier} min={0.5} max={10} step={0.1}
-              onChange={multiplier => onUpdateSettings({ superTrend: { ...settings.superTrend, multiplier } })} />
-          </div>
-        </div>
-      )}
+      {/* Right controls */}
+      <ToolButton active={logScale} onClick={onToggleLogScale} title="Logarithmic price scale">
+        log
+      </ToolButton>
+      <ToolButton onClick={onScreenshot} title="Download chart image">
+        <Camera size={14} />
+      </ToolButton>
+      <ToolButton onClick={onFullscreen} title="Fullscreen">
+        <Maximize2 size={14} />
+      </ToolButton>
     </div>
   );
 }

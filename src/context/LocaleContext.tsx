@@ -35,8 +35,10 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
 
   const t = useMemo(() => createTranslator(locale), [locale]);
 
+  const value = useMemo(() => ({ locale, setLocale, t }), [locale, setLocale, t]);
+
   return (
-    <LocaleContext.Provider value={{ locale, setLocale, t }}>
+    <LocaleContext.Provider value={value}>
       {children}
     </LocaleContext.Provider>
   );

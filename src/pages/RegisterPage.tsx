@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Redirect, useLocation } from 'wouter';
+import { Redirect } from 'wouter';
 import { useAuth, mapAuthError } from '../context/AuthContext';
 import { AuthLayout, AuthLink } from '../components/auth/AuthLayout';
 import { Input } from '../components/ui/input';
@@ -7,21 +7,19 @@ import { Button } from '../components/ui/button';
 
 export function RegisterPage() {
   const { signup, isAuthenticated } = useAuth();
-  const [, setLocation] = useLocation();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
+  // Successful signup flips isAuthenticated and this Redirect navigates.
   if (isAuthenticated) return <Redirect to="/dashboard" />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSuccess(null);
 
     if (username.trim().length < 3) { setError('Username must be at least 3 characters'); return; }
     if (!/^[a-zA-Z0-9_]+$/.test(username.trim())) {
@@ -35,11 +33,8 @@ export function RegisterPage() {
     setLoading(true);
     try {
       await signup(username, email, password);
-      setSuccess('Account created! Redirecting…');
-      setTimeout(() => setLocation('/dashboard'), 600);
     } catch (err) {
       setError(mapAuthError(err));
-    } finally {
       setLoading(false);
     }
   };
@@ -57,18 +52,12 @@ export function RegisterPage() {
             {error}
           </div>
         )}
-        {success && (
-          <div className="rounded-lg px-4 py-3 text-sm border"
-            style={{ background: 'rgba(38,166,154,.08)', borderColor: 'rgba(38,166,154,.25)', color: '#26a69a' }}>
-            {success}
-          </div>
-        )}
-
         <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <label htmlFor="reg-username" className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
             Username
           </label>
           <Input
+            id="reg-username"
             type="text"
             placeholder="trader_pro"
             value={username}
@@ -78,14 +67,16 @@ export function RegisterPage() {
             required
             minLength={3}
             maxLength={50}
+            className="h-11"
           />
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <label htmlFor="reg-email" className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
             Email
           </label>
           <Input
+            id="reg-email"
             type="email"
             placeholder="you@example.com"
             value={email}
@@ -93,14 +84,16 @@ export function RegisterPage() {
             autoComplete="email"
             disabled={loading}
             required
+            className="h-11"
           />
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <label htmlFor="reg-password" className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
             Password
           </label>
           <Input
+            id="reg-password"
             type="password"
             placeholder="Min. 8 characters"
             value={password}
@@ -109,14 +102,16 @@ export function RegisterPage() {
             disabled={loading}
             required
             minLength={8}
+            className="h-11"
           />
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
+          <label htmlFor="reg-confirm" className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
             Confirm Password
           </label>
           <Input
+            id="reg-confirm"
             type="password"
             placeholder="Repeat password"
             value={confirm}
@@ -125,6 +120,7 @@ export function RegisterPage() {
             disabled={loading}
             required
             minLength={8}
+            className="h-11"
           />
         </div>
 

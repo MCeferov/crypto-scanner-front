@@ -3,7 +3,7 @@ import type { ChartSignal } from './chartAnalysis';
 import type { FearGreedData } from '../services/fearGreedApi';
 import { computeUnifiedSetup, setupLabelFromSignal } from './setupSignal';
 import { computeReversalRisk, applyReversalPenalty } from './reversalRisk';
-import { computeSignalAges } from './signalAge';
+import { computeSignalAges, recomputeSetupAge } from './signalAge';
 import { computeSignalSync, applySyncToSetup } from './signalSync';
 import { getPrimaryAnalysisTf, type MtfTf } from './chartAnalysis';
 import type { Kline } from '../services/binanceApi';
@@ -370,24 +370,14 @@ export function enrichCoinWithResearch(
     }
   }
 
-  const finalAges = preAges && klines
-    ? computeSignalAges({
-        klineMap: klines,
-        primaryKlines: indicatorK,
-        haKlines: haK,
-        chartSignal: withResearch.chartSignal,
-        aiSignal: withResearch.signal,
-        setupSignal: finalSetup,
-        zonePosition: withResearch.zonePosition,
-        zoneBreakoutSignal: withResearch.zoneBreakoutSignal,
-        mtf1m: withResearch.mtf1m,
-        mtf5m: withResearch.mtf5m,
-        mtf15m: withResearch.mtf15m,
-        mtf30m: withResearch.mtf30m,
-        mtf1h: withResearch.mtf1h,
-        mtf4h: withResearch.mtf4h,
-        activeTfs,
-      })
+  // Only setupCandles depends on the final setup signal — reuse preAges
+  // instead of re-running the whole (expensive) age computation.
+  const finalAges = preAges
+    ? recomputeSetupAge(preAges, finalSetup, {
+        '1m': withResearch.mtf1m, '5m': withResearch.mtf5m,
+        '15m': withResearch.mtf15m, '30m': withResearch.mtf30m,
+        '1h': withResearch.mtf1h, '4h': withResearch.mtf4h,
+      }, activeTfs)
     : null;
 
   return {

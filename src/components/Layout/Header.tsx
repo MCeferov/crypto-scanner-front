@@ -9,9 +9,13 @@ import { LanguageSwitcher } from '../Controls/LanguageSwitcher';
 import { isCryptoAsset } from '../../utils/assetHelpers';
 import type { AssetCategory } from '../../types/asset';
 
+function navClass(active: boolean): string {
+  return `text-xs px-3 py-1.5 rounded-md cursor-pointer transition-colors row-hover focus-visible:outline-2 focus-visible:outline-[#2962ff] ${active ? 'font-semibold' : ''}`;
+}
+
 function navStyle(active: boolean): React.CSSProperties {
   return active
-    ? { color: 'var(--text)', background: 'var(--elevated)' }
+    ? { color: 'var(--text)', background: 'var(--elevated)', boxShadow: 'inset 0 -2px 0 var(--accent)' }
     : { color: 'var(--muted)' };
 }
 
@@ -102,14 +106,18 @@ export function Header() {
   return (
     <header
       className="sticky top-0 z-50 px-4 sm:px-5 py-2.5 backdrop-blur-md"
-      style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
+      style={{
+        // Translucent so backdrop-blur actually shows through (opaque --bg made it a no-op)
+        background: 'color-mix(in srgb, var(--bg) 82%, transparent)',
+        borderBottom: '1px solid var(--border)',
+      }}
     >
       <div className="flex items-center justify-between max-w-[1920px] mx-auto gap-3 sm:gap-4">
 
         <Link href="/" className="flex items-center gap-2.5 shrink-0 no-underline">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm"
-            style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', color: '#fff' }}
+            style={{ background: 'var(--accent)', color: '#fff' }}
           >
             M
           </div>
@@ -121,14 +129,14 @@ export function Header() {
           </div>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="flex items-center gap-1">
           <Link href="/">
-            <span className="text-xs px-3 py-1.5 rounded-md cursor-pointer" style={navStyle(isMarkets)}>
+            <span className={navClass(isMarkets)} style={navStyle(isMarkets)}>
               {t('nav.markets')}
             </span>
           </Link>
           <Link href="/dashboard">
-            <span className="text-xs px-3 py-1.5 rounded-md cursor-pointer" style={navStyle(isDashboard)}>
+            <span className={navClass(isDashboard)} style={navStyle(isDashboard)}>
               {t('nav.dashboard')}
             </span>
           </Link>
@@ -144,7 +152,7 @@ export function Header() {
               <span
                 className="w-2 h-2 rounded-full"
                 style={{
-                  background: wsConnected ? '#26a69a' : wsReconnecting ? '#f0b90b' : '#ef5350',
+                  background: wsConnected ? '#26a69a' : wsReconnecting ? '#f3a52f' : '#ef5350',
                   boxShadow: wsConnected ? '0 0 6px rgba(38,166,154,.7)' : 'none',
                 }}
               />
@@ -154,15 +162,22 @@ export function Header() {
             </div>
           )}
 
+          <span aria-hidden className="hidden sm:block w-px h-5" style={{ background: 'var(--border-lite)' }} />
+
           <LanguageSwitcher />
+          <ThemeToggle />
+
+          <span aria-hidden className="hidden sm:block w-px h-5" style={{ background: 'var(--border-lite)' }} />
 
           {user && (
-            <span className="text-xs font-medium hidden sm:inline" style={{ color: 'var(--text)' }}>
-              {user.username}
+            <span
+              className="hidden sm:flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold uppercase select-none"
+              title={user.username}
+              style={{ background: 'var(--elevated)', color: 'var(--text)', border: '1px solid var(--border)' }}
+            >
+              {user.username.slice(0, 2)}
             </span>
           )}
-
-          <ThemeToggle />
 
           <Button variant="outline" size="sm" onClick={handleLogout} className="text-xs h-7">
             {t('nav.logout')}

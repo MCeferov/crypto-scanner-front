@@ -226,6 +226,14 @@ interface MarketContextType {
   addOptionalFilter: (key: FilterKey) => void;
   removeOptionalFilter: (key: FilterKey) => void;
   toggleAnalysisTf: (tf: AnalysisTf) => void;
+  /** Watchlist — persisted asset ids */
+  favorites: Set<string>;
+  toggleFavorite: (id: string) => void;
+  showOnlyFavorites: boolean;
+  setShowOnlyFavorites: (v: boolean) => void;
+  /** Table row density — persisted */
+  density: 'comfortable' | 'compact';
+  setDensity: (d: 'comfortable' | 'compact') => void;
   refresh: () => void;
   /** Detail qrafikdən və ya server refresh-dən gələn klines ilə cədvəl indikatorlarını yenilə */
   syncAssetKlines: (assetId: string, patch: Record<string, Kline[]>) => void;
@@ -370,8 +378,11 @@ function computeIndicators(
 
   let priceChange1h = 0;
   if (k1h.length >= 2) {
-    const prevOpen = k1h[k1h.length - 2].open;
-    if (prevOpen > 0) priceChange1h = ((price - prevOpen) / prevOpen) * 100;
+    // Last element is the in-progress candle; its open (== previous close)
+    // is the price exactly 0–1h ago. The previous candle's open would be
+    // 1–2h in the past.
+    const refPrice = k1h[k1h.length - 2].close;
+    if (refPrice > 0) priceChange1h = ((price - refPrice) / refPrice) * 100;
   }
 
   const haResult = analyzeHeikinAshi(haKlines);
@@ -547,6 +558,33 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [visibleExtraCols, setVisibleExtraCols] = useState<ExtraCol[]>([]);
   const [visibleOptionalFilters, setVisibleOptionalFilters] = useState<FilterKey[]>([]);
   const [visibleAnalysisTfs, setVisibleAnalysisTfs] = useState<AnalysisTf[]>(['15m', '1h', '4h']);
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('market:favorites');
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+  const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
+  const [density, setDensityState] = useState<'comfortable' | 'compact'>(() => {
+    try {
+      return localStorage.getItem('market:density') === 'compact' ? 'compact' : 'comfortable';
+    } catch { return 'comfortable'; }
+  });
+
+  const toggleFavorite = useCallback((id: string) => {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try { localStorage.setItem('market:favorites', JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const setDensity = useCallback((d: 'comfortable' | 'compact') => {
+    setDensityState(d);
+    try { localStorage.setItem('market:density', d); } catch { /* ignore */ }
+  }, []);
 
   const toggleExtraCol = useCallback((col: ExtraCol) => {
     setVisibleExtraCols(prev =>
@@ -564,7 +602,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const wsRef            = useRef<BinanceWebSocket | null>(null);
-  const flashTimersRef   = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const flashSweepRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fearGreedRef     = useRef<FearGreedData | null>(null);
   const klineCacheRef    = useRef<Map<string, Record<string, Kline[]>>>(new Map());
   const activeTfsRef     = useRef<MtfTf[]>([...ALL_ANALYSIS_TFS]);
@@ -573,30 +611,41 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   activeTfsRef.current = visibleAnalysisTfs;
   rsiTfRef.current = visibleRsiCols[0] ?? '1m';
 
-  const syncAssetKlines = useCallback((assetId: string, patch: Record<string, Kline[]>) => {
-    const merged = { ...(klineCacheRef.current.get(assetId) ?? {}), ...patch };
-    klineCacheRef.current.set(assetId, merged);
+  /** Batch variant: one setCoins for many assets instead of N sequential passes. */
+  const syncAssetKlinesBatch = useCallback((patches: Map<string, Record<string, Kline[]>>) => {
+    if (patches.size === 0) return;
+    const mergedById = new Map<string, Record<string, Kline[]>>();
+    patches.forEach((patch, assetId) => {
+      const merged = { ...(klineCacheRef.current.get(assetId) ?? {}), ...patch };
+      klineCacheRef.current.set(assetId, merged);
+      mergedById.set(assetId, merged);
+    });
 
     startTransition(() => {
       setCoins(prev => {
-        const next = prev.map(coin => {
-          if (coin.id !== assetId || !hasIndicatorSupport(coin)) return coin;
+        const ctx = buildMarketContext(prev.find(c => c.symbol === 'BTCUSDT'), fearGreedRef.current);
+        return prev.map(coin => {
+          const merged = mergedById.get(coin.id);
+          if (!merged || !hasIndicatorSupport(coin)) return coin;
           const updated = {
             ...coin,
             ...computeIndicators(coin.symbol, merged, coin.price, coin.priceChange24h, activeTfsRef.current, rsiTfRef.current),
           };
           return enrichCoinWithResearch(
             updated,
-            buildMarketContext(prev.find(c => c.symbol === 'BTCUSDT'), fearGreedRef.current),
+            ctx,
             activeTfsRef.current,
             merged,
             rsiTfRef.current,
           );
         });
-        return next;
       });
     });
   }, []);
+
+  const syncAssetKlines = useCallback((assetId: string, patch: Record<string, Kline[]>) => {
+    syncAssetKlinesBatch(new Map([[assetId, patch]]));
+  }, [syncAssetKlinesBatch]);
 
   const refreshNonCryptoKlines = useCallback(async () => {
     const targets = coinsRef.current.filter(c => c.type !== 'crypto' && hasIndicatorSupport(c));
@@ -607,11 +656,11 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         ['1m', '5m', '15m', '1h', '4h'],
         true,
       );
-      map.forEach((klines, id) => syncAssetKlines(id, klines));
+      syncAssetKlinesBatch(map);
     } catch {
       /* ignore background refresh errors */
     }
-  }, [syncAssetKlines]);
+  }, [syncAssetKlinesBatch]);
 
   const ensureIntervalLoaded = useCallback(async (tf: RsiTf) => {
     const targets = coinsRef.current.filter(hasIndicatorSupport);
@@ -687,35 +736,49 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
   }, [recomputeFromCache]);
 
   const handleWSMessage = useCallback((updates: TickerUpdate[]) => {
+    // Pure updater: no timers or ref mutations inside (unsafe under React 18
+    // replay), and an index map instead of O(n) find per update.
     setCoins(prev => {
-      const map = new Map(prev.map(c => [c.id, c]));
+      const idxBySymbol = new Map<string, number>();
+      prev.forEach((c, i) => { if (isCryptoAsset(c)) idxBySymbol.set(c.symbol, i); });
       let changed = false;
+      const next = [...prev];
       for (const upd of updates) {
-        const existing = prev.find(c => c.symbol === upd.symbol && isCryptoAsset(c));
-        if (!existing) continue;
+        const idx = idxBySymbol.get(upd.symbol);
+        if (idx === undefined) continue;
+        const existing = next[idx];
         const newPrice    = parseFloat(upd.close);
         const newChange24h = parseFloat(upd.changePercent);
         const newVolume   = parseFloat(upd.quoteVolume);
         if (Math.abs(newPrice - existing.price) < 1e-12) continue;
-        map.set(existing.id, {
+        next[idx] = {
           ...existing,
           price: newPrice,
           priceChange24h: newChange24h,
           volume24h: newVolume,
           flashUp:   newPrice > existing.price,
           flashDown: newPrice < existing.price,
-        });
+        };
         changed = true;
-        const key = existing.id;
-        const t = flashTimersRef.current.get(key);
-        if (t) clearTimeout(t);
-        flashTimersRef.current.set(key, setTimeout(() => {
-          setCoins(p => p.map(c => c.id === key ? { ...c, flashUp: false, flashDown: false } : c));
-          flashTimersRef.current.delete(key);
-        }, 800));
       }
-      return changed ? Array.from(map.values()) : prev;
+      return changed ? next : prev;
     });
+
+    // One sweep timer per batch instead of one timer per coin — the CSS flash
+    // animation is one-shot anyway; this just clears the flags afterwards.
+    if (flashSweepRef.current) clearTimeout(flashSweepRef.current);
+    flashSweepRef.current = setTimeout(() => {
+      flashSweepRef.current = null;
+      setCoins(p => {
+        let any = false;
+        const cleared = p.map(c => {
+          if (!c.flashUp && !c.flashDown) return c;
+          any = true;
+          return { ...c, flashUp: false, flashDown: false };
+        });
+        return any ? cleared : p;
+      });
+    }, 850);
   }, []);
 
   const handleWSStatus = useCallback((connected: boolean, reconnecting: boolean) => {
@@ -824,6 +887,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
           fearGreedRef.current,
           activeTfsRef.current,
           klineCacheRef.current,
+          rsiTfRef.current,
         ));
       };
 
@@ -958,7 +1022,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     return () => {
       ws.destroy();
       wsRef.current = null;
-      flashTimersRef.current.forEach(t => clearTimeout(t));
+      if (flashSweepRef.current) clearTimeout(flashSweepRef.current);
     };
   }, []);
 
@@ -976,6 +1040,10 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     let result = [...coins];
 
     result = result.filter(c => assetMatchesCategory(c.type, assetCategory));
+
+    if (showOnlyFavorites) {
+      result = result.filter(c => favorites.has(c.id));
+    }
 
     if (searchQuery) {
       result = result.filter(c => matchesSearch(c, searchQuery));
@@ -1141,11 +1209,16 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
         case 'riskReward': av = a.riskReward ?? -1; bv = b.riskReward ?? -1; break;
         default: av = a.volume24h; bv = b.volume24h;
       }
+      // NaN in either operand would make the comparator inconsistent and
+      // the resulting order arbitrary.
+      if (Number.isNaN(av)) av = -Infinity;
+      if (Number.isNaN(bv)) bv = -Infinity;
+      if (av === bv) return 0;
       return sortDir === 'asc' ? av - bv : bv - av;
     });
 
     return result;
-  }, [coins, searchQuery, filter, sortKey, sortDir, assetCategory, visibleRsiCols]);
+  }, [coins, searchQuery, filter, sortKey, sortDir, assetCategory, visibleRsiCols, favorites, showOnlyFavorites]);
 
   return (
     <MarketContext.Provider value={{
@@ -1156,6 +1229,8 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       setSortKey, setSortDir, setFilter, setSearchQuery,
       handleSort, toggleRsiCol, toggleExtraCol, addOptionalFilter, removeOptionalFilter,
       toggleAnalysisTf, refresh: loadData, syncAssetKlines,
+      favorites, toggleFavorite, showOnlyFavorites, setShowOnlyFavorites,
+      density, setDensity,
     }}>
       {children}
     </MarketContext.Provider>

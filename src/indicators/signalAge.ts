@@ -7,11 +7,17 @@ import type { Signal } from './aiSignal';
 import type { ChartSignal } from './chartAnalysis';
 import type { SetupSignal } from './setupSignal';
 import type { ZonePosition, ZoneBreakoutSignal } from './supplyDemand';
-import { getLatestStochRSI } from './stochRsi';
-import { getLatestRSI } from './rsi';
+import { calculateStochRSI } from './stochRsi';
+import { calculateRSI } from './rsi';
 
 /** Qısa TF-lərdə MACD uzun müddət eyni işarədə qala bilər — 48 cap detail ilə uyğunsuzluq yaradırdı */
 const MAX_LOOKBACK = 1000;
+/**
+ * MTF persistence re-runs the full analyzeTimeframe per step (inherently
+ * O(n) each), so its lookback is capped separately — beyond ~120 candles the
+ * exact age carries no extra signal but froze the UI on recomputes.
+ */
+const MTF_MAX_LOOKBACK = 120;
 
 export interface SignalAges {
   mtf1mCandles: number;
@@ -37,7 +43,7 @@ function countMtfPersistence(klines: Kline[], tf: MtfTf): number {
   if (current.signal === 'NEUTRAL') return 0;
 
   let count = 0;
-  for (let back = 0; back < MAX_LOOKBACK && klines.length - back >= 15; back++) {
+  for (let back = 0; back < MTF_MAX_LOOKBACK && klines.length - back >= 15; back++) {
     const slice = klines.slice(0, klines.length - back);
     if (analyzeTimeframe(slice, tf).signal === current.signal) count++;
     else break;
@@ -79,17 +85,22 @@ function stochBias(k: number, d: number): string {
   return k >= d ? 'bull' : 'bear';
 }
 
+/**
+ * RSI/StochRSI are forward-recursive, so the value at prefix length L equals
+ * series[L - offset] of one full computation — walking the precomputed series
+ * backwards is identical to the old slice-and-recompute loop, but O(n)
+ * instead of O(n²).
+ */
 function countRsiPersistence(closes: number[]): number {
   if (closes.length < 20) return 0;
-  const last = getLatestRSI(closes, 14);
-  if (last === null) return 0;
+  const series = calculateRSI(closes, 14);
+  if (series.length === 0) return 0;
+  const last = series[series.length - 1];
   const bull = last < 50;
 
   let count = 0;
-  for (let back = 0; back < MAX_LOOKBACK && closes.length - back >= 20; back++) {
-    const rsi = getLatestRSI(closes.slice(0, closes.length - back), 14);
-    if (rsi === null) break;
-    const matches = bull ? rsi < 52 : rsi > 48;
+  for (let i = series.length - 1; i >= 0 && count < MAX_LOOKBACK; i--) {
+    const matches = bull ? series[i] < 52 : series[i] > 48;
     if (matches) count++;
     else break;
   }
@@ -98,35 +109,37 @@ function countRsiPersistence(closes: number[]): number {
 
 function countStochPersistence(closes: number[]): number {
   if (closes.length < 20) return 0;
-  const last = getLatestStochRSI(closes);
-  if (!last) return 0;
+  const series = calculateStochRSI(closes);
+  if (series.length === 0) return 0;
+  const last = series[series.length - 1];
   const lastBias = stochBias(last.k, last.d);
 
   let count = 0;
-  for (let back = 0; back < MAX_LOOKBACK && closes.length - back >= 20; back++) {
-    const s = getLatestStochRSI(closes.slice(0, closes.length - back));
-    if (!s) break;
-    if (stochBias(s.k, s.d) === lastBias) count++;
+  for (let i = series.length - 1; i >= 0 && count < MAX_LOOKBACK; i--) {
+    if (stochBias(series[i].k, series[i].d) === lastBias) count++;
     else break;
   }
   return count;
 }
 
+/** Reuses the per-TF ages already computed in computeSignalAges. */
 function countChartPersistence(
-  klineMap: Record<string, Kline[]>,
+  mtfAges: number[],
   chartSignal: ChartSignal,
-  activeTfs: MtfTf[],
 ): number {
-  if (chartSignal === 'NEUTRAL' || activeTfs.length === 0) return 0;
-  const ages = activeTfs.map(tf => countMtfPersistence(klineMap[tf] || [], tf));
-  return Math.min(...ages);
+  if (chartSignal === 'NEUTRAL' || mtfAges.length === 0) return 0;
+  return Math.min(...mtfAges);
 }
 
-function countAiPersistence(klinesHa: Kline[], signal: Signal): number {
+/** Reuses macd/st ages already computed in computeSignalAges. */
+function countAiPersistence(
+  klinesHa: Kline[],
+  signal: Signal,
+  macdAge: number,
+  stAge: number,
+): number {
   if (signal === 'NEUTRAL') return 0;
   const bull = signal === 'BUY' || signal === 'STRONG_BUY';
-  const macdAge = countMacdPersistence(klinesHa);
-  const stAge = countStPersistence(klinesHa);
   const ha = analyzeHeikinAshi(klinesHa);
   const haOk = bull ? ha.trend === 1 : ha.trend === -1;
   const ages = [macdAge, stAge, haOk ? ha.consecutive : 0].filter(a => a > 0);
@@ -215,8 +228,15 @@ export function computeSignalAges(input: {
   const stCandles = countStPersistence(input.primaryKlines);
   const stochCandles = countStochPersistence(input.primaryKlines.map(k => k.close));
   const haCandles = haResult.consecutive;
-  const chartCandles = countChartPersistence(input.klineMap, input.chartSignal, input.activeTfs);
-  const aiCandles = countAiPersistence(input.primaryKlines, input.aiSignal);
+  const activeMtfAges = input.activeTfs.map(tf => {
+    const byTf: Record<MtfTf, number> = {
+      '1m': mtf1mCandles, '5m': mtf5mCandles, '15m': mtf15mCandles,
+      '30m': mtf30mCandles, '1h': mtf1hCandles, '4h': mtf4hCandles,
+    };
+    return byTf[tf];
+  });
+  const chartCandles = countChartPersistence(activeMtfAges, input.chartSignal);
+  const aiCandles = countAiPersistence(input.primaryKlines, input.aiSignal, macdCandles, stCandles);
   const zoneCandles = countZonePersistence(
     input.zonePosition, input.zoneBreakoutSignal, haCandles,
   );
@@ -240,6 +260,21 @@ export function computeSignalAges(input: {
   );
 
   return { ...partial, setupCandles } as SignalAges;
+}
+
+/**
+ * Recompute only the setup age against a different setup signal, reusing an
+ * existing SignalAges result — the other 14 fields do not depend on the setup
+ * signal, so re-running the whole computeSignalAges pass was pure waste.
+ */
+export function recomputeSetupAge(
+  ages: SignalAges,
+  setupSignal: SetupSignal,
+  mtfDirs: Record<MtfTf, TfDir>,
+  activeTfs: MtfTf[],
+): SignalAges {
+  const setupCandles = countSetupPersistence(setupSignal, ages, mtfDirs, activeTfs);
+  return { ...ages, setupCandles };
 }
 
 export function isFreshSignal(candles: number): boolean {

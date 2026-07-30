@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'wouter';
 import { ThemeToggle } from '../ThemeToggle';
+import { LanguageSwitcher } from '../Controls/LanguageSwitcher';
 
 interface AuthLayoutProps {
   title: string;
@@ -12,17 +13,20 @@ interface AuthLayoutProps {
 export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProps) {
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4 py-10 relative"
+      className="min-h-screen flex items-center justify-center px-4 py-10 relative overflow-hidden"
       style={{ background: 'var(--bg)' }}
     >
-      <div className="absolute top-4 right-4">
+      <div aria-hidden className="gate-glow gate-glow-a" />
+      <div aria-hidden className="gate-glow gate-glow-b" />
+      <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+        <LanguageSwitcher />
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md relative">
         <div className="flex items-center gap-2.5 justify-center mb-8">
           <div
             className="w-9 h-9 rounded-lg flex items-center justify-center font-black text-base"
-            style={{ background: 'linear-gradient(135deg,#f0b90b,#f59e0b)', color: '#0a0e17' }}
+            style={{ background: 'var(--accent)', color: '#fff' }}
           >
             C
           </div>
@@ -59,7 +63,7 @@ export function AuthLink({ href, children }: { href: string; children: React.Rea
     <Link
       href={href}
       className="font-semibold hover:underline"
-      style={{ color: '#f0b90b' }}
+      style={{ color: 'var(--accent)' }}
     >
       {children}
     </Link>

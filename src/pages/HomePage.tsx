@@ -16,21 +16,23 @@ export function HomePage() {
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
       <Header />
 
+      {/* Compact command band: title + tabs + search in one row */}
       <section
-        className="border-b px-4 pt-4 pb-3"
-        style={{ borderColor: 'var(--border)', background: 'linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%)' }}
+        className="border-b px-4 py-2.5"
+        style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
       >
-        <div className="max-w-[1920px] mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
-            <div>
-              <h1 className="text-lg sm:text-xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>
-                {t('home.title')}
-              </h1>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--dim)' }}>{t('home.subtitle')}</p>
-            </div>
-            <SearchBox />
+        <div className="max-w-[1920px] mx-auto flex items-center gap-4 flex-wrap">
+          <div className="min-w-0 mr-2">
+            <h1 className="text-sm sm:text-base font-bold tracking-tight leading-tight" style={{ color: 'var(--text)' }}>
+              {t('home.title')}
+            </h1>
+            <p className="text-[11px] leading-tight hidden sm:block" style={{ color: 'var(--dim)' }}>
+              {t('home.subtitle')}
+            </p>
           </div>
           <CategoryTabs />
+          <div className="flex-1" />
+          <SearchBox />
         </div>
       </section>
 

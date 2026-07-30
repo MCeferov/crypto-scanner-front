@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useCallback } from 'react';
+import React, { useMemo, useEffect, useCallback, useRef } from 'react';
 import { useRoute, useLocation } from 'wouter';
 import { ArrowLeft } from 'lucide-react';
 import { useMarket } from '../context/MarketContext';
@@ -33,14 +33,23 @@ export function AssetDetailPage() {
     syncAssetKlines(asset.id, { [interval]: klines });
   }, [asset, syncAssetKlines]);
 
+  // Fetch fresh klines ONCE per asset id. Depending on the `asset` object
+  // itself would loop forever: syncAssetKlines produces a new coin object,
+  // which produces a new `asset`, which would re-fire this effect.
+  const fetchedForRef = useRef<string | null>(null);
+  const assetId = asset?.id ?? null;
+  const assetType = asset?.type ?? null;
   useEffect(() => {
-    if (!asset || asset.type === 'crypto') return;
+    if (!asset || !assetId || assetType === 'crypto') return;
+    if (fetchedForRef.current === assetId) return;
+    fetchedForRef.current = assetId;
     const ref = toKlineAssetRef(asset);
     void batchKlinesFromServer([ref], ['1m', '5m', '15m', '1h', '4h'], true).then(map => {
-      const klines = map.get(asset.id);
-      if (klines) syncAssetKlines(asset.id, klines);
+      const klines = map.get(assetId);
+      if (klines) syncAssetKlines(assetId, klines);
     }).catch(() => {});
-  }, [asset, syncAssetKlines]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId, assetType, syncAssetKlines]);
 
   const analysis = useMemo(() => {
     if (!asset || !asset.indicatorsLoaded) return null;

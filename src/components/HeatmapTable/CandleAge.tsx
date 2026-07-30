@@ -12,8 +12,8 @@ export function CandleAge({ candles, className = '' }: CandleAgeProps) {
   const fresh = isFreshSignal(candles);
   return (
     <span
-      className={`text-[8px] font-mono ml-0.5 align-super ${className}`}
-      style={{ color: fresh ? '#f0b90b' : 'var(--dim)', opacity: fresh ? 1 : 0.75 }}
+      className={`text-[10px] font-mono ml-0.5 align-super ${className}`}
+      style={{ color: fresh ? '#f3a52f' : 'var(--dim)', opacity: fresh ? 1 : 0.75 }}
       title={fresh ? `Yeni siqnal (${candles} şam) — flip riski` : `${candles} şamdır bu siqnaldadır`}
     >
       {candles}

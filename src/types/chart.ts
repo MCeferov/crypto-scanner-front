@@ -17,7 +17,7 @@ export const CHART_TIMEFRAMES: { key: ChartTimeframe; label: string; binance: st
   { key: '1w', label: '1W', binance: '1w' },
 ];
 
-export type CandleMode = 'normal' | 'heikinAshi';
+export type CandleMode = 'normal' | 'heikinAshi' | 'line' | 'area';
 
 export type IndicatorKey =
   | 'volume'
@@ -73,6 +73,9 @@ export interface ChartThemeColors {
   crosshair: string;
   upColor: string;
   downColor: string;
+  lineColor: string;
+  areaTop: string;
+  areaBottom: string;
   volumeUp: string;
   volumeDown: string;
   bbUpper: string;
@@ -92,6 +95,9 @@ export interface ChartThemeColors {
 const CHART_COLORS_SHARED = {
   upColor: '#26a69a',
   downColor: '#ef5350',
+  lineColor: '#2962ff',
+  areaTop: 'rgba(41,98,255,0.22)',
+  areaBottom: 'rgba(41,98,255,0.02)',
   volumeUp: 'rgba(38,166,154,0.5)',
   volumeDown: 'rgba(239,83,80,0.5)',
   bbUpper: 'rgba(41,98,255,0.6)',

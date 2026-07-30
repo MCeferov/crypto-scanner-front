@@ -102,7 +102,10 @@ export async function binanceFetch(
         bannedUntil = until;
         throw new BinanceBanError(until);
       }
-      const retryAfter = parseInt(res.headers.get('retry-after') ?? '30', 10);
+      // Retry-After may be an HTTP-date (RFC 7231) — parseInt then yields NaN,
+      // and NaN here would disable the ban guard entirely.
+      const rawRetry = parseInt(res.headers.get('retry-after') ?? '30', 10);
+      const retryAfter = Number.isFinite(rawRetry) ? rawRetry : 30;
       bannedUntil = Date.now() + Math.max(retryAfter, 30) * 1000;
       throw new BinanceBanError(bannedUntil);
     }

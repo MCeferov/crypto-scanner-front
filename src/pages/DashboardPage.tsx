@@ -3,6 +3,7 @@ import { Link } from 'wouter';
 import { Header } from '../components/Layout/Header';
 import { MarketSummary } from '../components/Dashboard/MarketSummary';
 import { DashboardSearch } from '../components/Dashboard/DashboardSearch';
+import { TopMovers } from '../components/Dashboard/TopMovers';
 import { useAuth } from '../context/AuthContext';
 import { useT } from '../context/LocaleContext';
 import { Button } from '../components/ui/button';
@@ -62,6 +63,10 @@ export function DashboardPage() {
           </div>
         </section>
 
+        <section className="mb-6">
+          <TopMovers />
+        </section>
+
         <section
           className="rounded-2xl border p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
           style={{
@@ -77,9 +82,9 @@ export function DashboardPage() {
               {t('dashboard.heatmapDesc')}
             </p>
           </div>
-          <Link href="/">
-            <Button className="shrink-0 whitespace-nowrap">{t('dashboard.openHeatmap')}</Button>
-          </Link>
+          <Button asChild className="shrink-0 whitespace-nowrap">
+            <Link href="/">{t('dashboard.openHeatmap')}</Link>
+          </Button>
         </section>
       </div>
     </div>

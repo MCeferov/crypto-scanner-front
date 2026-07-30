@@ -55,12 +55,15 @@ function buyRatioForKlines(klines: Kline[], lookback = VOL_LOOKBACK): number | n
 }
 
 function volumeVsSma(klines: Kline[]): number | null {
-  if (klines.length < VOL_SMA_PERIOD + 1) return null;
+  // The final kline is the in-progress candle: its volume is partial for most
+  // of the candle's lifetime, so comparing it to a closed-bar SMA reads as
+  // "dry" almost always. Compare the last CLOSED candle instead.
+  if (klines.length < VOL_SMA_PERIOD + 2) return null;
   const vols = klines.map(k => k.volume);
-  const sma = vols.slice(-VOL_SMA_PERIOD - 1, -1).reduce((a, b) => a + b, 0) / VOL_SMA_PERIOD;
-  const last = vols[vols.length - 1];
+  const lastClosed = vols[vols.length - 2];
+  const sma = vols.slice(-VOL_SMA_PERIOD - 2, -2).reduce((a, b) => a + b, 0) / VOL_SMA_PERIOD;
   if (sma <= 0) return null;
-  return last / sma;
+  return lastClosed / sma;
 }
 
 export function computeBuyRatios(klineMap: Record<string, Kline[]>): Record<VolumeRsiTf, number | null> {
