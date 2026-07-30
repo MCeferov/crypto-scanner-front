@@ -2,7 +2,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import { fileURLToPath } from "node:url";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+
+/**
+ * `import.meta.dirname` only exists on Node >= 20.11 — on anything older it is
+ * `undefined` and every path.resolve() below throws, failing the build with a
+ * bare exit code 1. Deriving it from import.meta.url works on every Node that
+ * can run Vite, so the build no longer depends on the host's Node version.
+ */
+const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * PORT/BASE_PATH are injected by the Replit workflow for `dev`/`preview` and
@@ -45,7 +54,7 @@ export default defineConfig({
       ? [
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer({
-              root: path.resolve(import.meta.dirname, ".."),
+              root: path.resolve(configDir, ".."),
             }),
           ),
           await import("@replit/vite-plugin-dev-banner").then((m) =>
@@ -56,15 +65,15 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
-      "@workspace/i18n": path.resolve(import.meta.dirname, "..", "..", "lib", "i18n", "src", "index.ts"),
+      "@": path.resolve(configDir, "src"),
+      "@assets": path.resolve(configDir, "..", "..", "attached_assets"),
+      "@workspace/i18n": path.resolve(configDir, "..", "..", "lib", "i18n", "src", "index.ts"),
     },
     dedupe: ["react", "react-dom"],
   },
-  root: path.resolve(import.meta.dirname),
+  root: path.resolve(configDir),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    outDir: path.resolve(configDir, "dist/public"),
     emptyOutDir: true,
   },
   server: {
