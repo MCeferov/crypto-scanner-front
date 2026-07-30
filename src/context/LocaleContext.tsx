@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import {
   createTranslator, DEFAULT_LOCALE, isValidLocale, type Locale, type TranslateFn,
 } from '@workspace/i18n';
+import { apiUrl } from '../services/apiBase';
 
 const STORAGE_KEY = 'app-locale';
 
@@ -30,7 +31,7 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    fetch('/api/i18n/locales').catch(() => {});
+    fetch(apiUrl('/api/i18n/locales')).catch(() => {});
   }, []);
 
   const t = useMemo(() => createTranslator(locale), [locale]);

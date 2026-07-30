@@ -1,6 +1,7 @@
 /** Market data API — backend failover layer */
 
 import type { BackendAssetClass } from '../types/asset';
+import { apiUrl } from './apiBase';
 
 export interface NormalizedAsset {
   symbol: string;
@@ -29,10 +30,8 @@ export interface AllMarketsResponse {
   total: number;
 }
 
-const API_BASE = '/api';
-
 async function fetchMarkets(path: string, query?: string): Promise<MarketsResponse> {
-  const url = `${API_BASE}/markets/${path}${query ? `?${query}` : ''}`;
+  const url = apiUrl(`/api/markets/${path}${query ? `?${query}` : ''}`);
   const res = await fetch(url);
   if (!res.ok) return { data: [], source: 'none', count: 0 };
   return res.json();
@@ -84,7 +83,7 @@ export async function getAsset(
   symbol: string,
   assetClass: BackendAssetClass = 'crypto',
 ): Promise<NormalizedAsset | null> {
-  const res = await fetch(`${API_BASE}/markets/asset/${symbol}?class=${assetClass}`);
+  const res = await fetch(apiUrl(`/api/markets/asset/${symbol}?class=${assetClass}`));
   if (!res.ok) return null;
   const json = await res.json();
   return json.data ?? null;

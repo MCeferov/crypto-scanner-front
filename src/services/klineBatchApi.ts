@@ -1,6 +1,7 @@
 import type { Kline } from './binanceApi';
 import type { AssetType } from '../types/asset';
 import { ESSENTIAL_TIMEFRAMES, EXTRA_TIMEFRAMES } from './binanceApi';
+import { apiUrl } from './apiBase';
 
 /** Cədvəl indikator hesabı — MACD EMA üçün detail ilə eyni uzunluqda tarixçə */
 export const INDICATOR_KLINE_LIMIT = 1000;
@@ -38,7 +39,7 @@ export function streamKlinesFromServer(
       assets: encodeAssets(assets),
       intervals: intervals.join(','),
     });
-    const es = new EventSource(`/api/markets/klines/stream?${qs}`);
+    const es = new EventSource(apiUrl(`/api/markets/klines/stream?${qs}`));
 
     es.onmessage = (ev) => {
       try {
@@ -75,7 +76,7 @@ export async function batchKlinesFromServer(
   intervals: readonly string[] = ESSENTIAL_TIMEFRAMES,
   refresh = false,
 ): Promise<Map<string, Record<string, Kline[]>>> {
-  const res = await fetch('/api/markets/klines/batch', {
+  const res = await fetch(apiUrl('/api/markets/klines/batch'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assets, intervals, refresh }),
@@ -93,7 +94,7 @@ export async function getChartKlines(
   limit = INDICATOR_KLINE_LIMIT,
 ): Promise<Kline[]> {
   const qs = new URLSearchParams({ type, symbol, interval, limit: String(limit) });
-  const res = await fetch(`/api/markets/klines/chart?${qs}`);
+  const res = await fetch(apiUrl(`/api/markets/klines/chart?${qs}`));
   if (!res.ok) throw new Error(`Chart klines failed: ${res.status}`);
   const json = await res.json() as { data: Kline[] };
   return json.data ?? [];

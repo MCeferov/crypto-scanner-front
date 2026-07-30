@@ -1,7 +1,8 @@
 /** Dev: Vite proxy; prod: API server proxy — CORS olmadan */
 import { binanceFetch, BinanceBanError, isBinanceBanned } from './binanceRateLimiter';
+import { apiUrl } from './apiBase';
 
-const BASE = import.meta.env.DEV ? "/binance-api" : "/api/binance";
+const BASE = import.meta.env.DEV ? "/binance-api" : apiUrl("/api/binance");
 
 export { BinanceBanError, isBinanceBanned };
 
