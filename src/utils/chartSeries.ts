@@ -3,7 +3,6 @@ import type { Kline } from '../services/binanceApi';
 import type { CandleMode, IndicatorSettings } from '../types/chart';
 import { calculateRSI } from '../indicators/rsi';
 import { calculateMACD } from '../indicators/macd';
-import { calculateBollingerBands } from '../indicators/bollingerBands';
 import { calculateSuperTrend } from '../indicators/supertrend';
 import { calculateStochRSI } from '../indicators/stochRsi';
 import { heikinAshiToKlines } from '../indicators/heikinAshi';
@@ -55,17 +54,6 @@ export function buildMACDSeries(klines: Kline[], fast: number, slow: number, sig
   };
 }
 
-export function buildBBSeries(klines: Kline[], period: number, stdDev: number) {
-  const closes = klines.map(k => k.close);
-  const results = calculateBollingerBands(closes, period, stdDev);
-  const offset = closes.length - results.length;
-  return {
-    upper: results.map((r, i) => ({ time: toChartTime(klines[offset + i].openTime), value: r.upper })),
-    middle: results.map((r, i) => ({ time: toChartTime(klines[offset + i].openTime), value: r.middle })),
-    lower: results.map((r, i) => ({ time: toChartTime(klines[offset + i].openTime), value: r.lower })),
-  };
-}
-
 export function buildSuperTrendSeries(klines: Kline[], period: number, multiplier: number) {
   const results = calculateSuperTrend(klines, period, multiplier);
   const offset = klines.length - results.length;
@@ -112,9 +100,6 @@ export function computeAllChartSeries(klines: Kline[], settings: IndicatorSettin
     macd: settings.macd.enabled
       ? buildMACDSeries(klines, settings.macd.fast, settings.macd.slow, settings.macd.signal)
       : { macd: [], signal: [], histogram: [] },
-    bb: settings.bollingerBands.enabled
-      ? buildBBSeries(klines, settings.bollingerBands.period, settings.bollingerBands.stdDev)
-      : { upper: [], middle: [], lower: [] },
     superTrend: settings.superTrend.enabled
       ? buildSuperTrendSeries(klines, settings.superTrend.period, settings.superTrend.multiplier)
       : [],

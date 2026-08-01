@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   CandlestickChart, LineChart, AreaChart, ChevronDown,
-  SlidersHorizontal, Camera, Maximize2, Check, Settings2,
+  SlidersHorizontal, Camera, Maximize2, Check, Settings2, Zap,
 } from 'lucide-react';
 import {
   CHART_TIMEFRAMES,
+  SIGNAL_INDICATORS,
   type CandleMode,
   type ChartTimeframe,
   type IndicatorSettings,
   type IndicatorKey,
+  type SignalIndicatorKey,
 } from '../../types/chart';
 
 interface ChartToolbarProps {
@@ -122,17 +124,6 @@ interface IndicatorRowDef {
 const INDICATOR_ROWS: IndicatorRowDef[] = [
   { key: 'volume', label: 'Volume' },
   {
-    key: 'bollingerBands', label: 'Bollinger Bands',
-    settingsBody: (s, u) => (
-      <>
-        <NumInput label="Period" value={s.bollingerBands.period} min={2} max={100}
-          onChange={period => u({ bollingerBands: { ...s.bollingerBands, period } })} />
-        <NumInput label="StdDev" value={s.bollingerBands.stdDev} min={0.5} max={5} step={0.1}
-          onChange={stdDev => u({ bollingerBands: { ...s.bollingerBands, stdDev } })} />
-      </>
-    ),
-  },
-  {
     key: 'superTrend', label: 'SuperTrend',
     settingsBody: (s, u) => (
       <>
@@ -186,16 +177,61 @@ const INDICATOR_ROWS: IndicatorRowDef[] = [
   },
 ];
 
+function SignalCheckRow({
+  checked, label, onToggle, dim,
+}: {
+  checked: boolean; label: string; onToggle: () => void; dim?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left row-hover"
+      style={{ opacity: dim ? 0.45 : 1 }}
+      onClick={onToggle}
+    >
+      <span
+        className="w-4 h-4 rounded flex items-center justify-center border transition-colors"
+        style={{
+          background: checked ? 'var(--accent)' : 'transparent',
+          borderColor: checked ? 'var(--accent)' : 'var(--chart-border)',
+        }}
+      >
+        {checked && <Check size={11} color="#fff" />}
+      </span>
+      <span style={{ color: 'var(--chart-text-bright)' }}>{label}</span>
+    </button>
+  );
+}
+
+function SignalSectionLabel({ children, color }: { children: React.ReactNode; color: string }) {
+  return (
+    <div className="px-3 pt-2 pb-1 text-[10px] font-semibold tracking-wider" style={{ color }}>
+      {children}
+    </div>
+  );
+}
+
 export function ChartToolbar({
   timeframe, onTimeframeChange, settings, onToggleIndicator, onUpdateSettings,
   logScale, onToggleLogScale, onScreenshot, onFullscreen,
 }: ChartToolbarProps) {
   const [typeOpen, setTypeOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);
+  const [sigOpen, setSigOpen] = useState(false);
   const [expanded, setExpanded] = useState<IndicatorKey | null>(null);
 
   const typeRef = useClickOutside(typeOpen, () => setTypeOpen(false));
   const indRef = useClickOutside(indOpen, () => setIndOpen(false));
+  const sigRef = useClickOutside(sigOpen, () => setSigOpen(false));
+
+  const toggleSignal = (side: 'buy' | 'sell', key: SignalIndicatorKey) => {
+    onUpdateSettings({
+      signals: {
+        ...settings.signals,
+        [side]: { ...settings.signals[side], [key]: !settings.signals[side][key] },
+      },
+    });
+  };
 
   const currentType = CHART_TYPES.find(ct => ct.key === settings.candleMode) ?? CHART_TYPES[0];
   const enabledCount = INDICATOR_ROWS.filter(r => settings[r.key].enabled).length;
@@ -307,6 +343,70 @@ export function ChartToolbar({
                 </div>
               );
             })}
+            <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
+            <SignalSectionLabel color="var(--chart-text-dim)">ANALYSIS</SignalSectionLabel>
+            <SignalCheckRow
+              checked={settings.analysis.supplyZones}
+              label="Supply Zones"
+              onToggle={() => onUpdateSettings({
+                analysis: { ...settings.analysis, supplyZones: !settings.analysis.supplyZones },
+              })}
+            />
+            <SignalCheckRow
+              checked={settings.analysis.demandZones}
+              label="Demand Zones"
+              onToggle={() => onUpdateSettings({
+                analysis: { ...settings.analysis, demandZones: !settings.analysis.demandZones },
+              })}
+            />
+            <SignalCheckRow
+              checked={settings.analysis.patterns}
+              label="Chart Patterns"
+              onToggle={() => onUpdateSettings({
+                analysis: { ...settings.analysis, patterns: !settings.analysis.patterns },
+              })}
+            />
+          </MenuSurface>
+        )}
+      </div>
+
+      {/* Signal Settings dropdown — confluence engine config */}
+      <div className="relative" ref={sigRef}>
+        <ToolButton active={sigOpen || settings.signals.enabled} onClick={() => setSigOpen(o => !o)} title="Signal Settings">
+          <Zap size={14} />
+          <span className="hidden sm:inline">Signals</span>
+        </ToolButton>
+        {sigOpen && (
+          <MenuSurface width={230}>
+            <SignalCheckRow
+              checked={settings.signals.enabled}
+              label="Signal Engine"
+              onToggle={() => onUpdateSettings({
+                signals: { ...settings.signals, enabled: !settings.signals.enabled },
+              })}
+            />
+            <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
+            <SignalSectionLabel color="#26a69a">BUY SIGNAL</SignalSectionLabel>
+            {SIGNAL_INDICATORS.map(ind => (
+              <SignalCheckRow
+                key={`buy-${ind.key}`}
+                checked={settings.signals.buy[ind.key]}
+                label={ind.label}
+                dim={!settings.signals.enabled}
+                onToggle={() => toggleSignal('buy', ind.key)}
+              />
+            ))}
+            <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
+            <SignalSectionLabel color="#ef5350">SELL SIGNAL</SignalSectionLabel>
+            {SIGNAL_INDICATORS.map(ind => (
+              <SignalCheckRow
+                key={`sell-${ind.key}`}
+                checked={settings.signals.sell[ind.key]}
+                label={ind.label}
+                dim={!settings.signals.enabled}
+                onToggle={() => toggleSignal('sell', ind.key)}
+              />
+            ))}
           </MenuSurface>
         )}
       </div>

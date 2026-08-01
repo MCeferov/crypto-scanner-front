@@ -21,11 +21,39 @@ export type CandleMode = 'normal' | 'heikinAshi' | 'line' | 'area';
 
 export type IndicatorKey =
   | 'volume'
-  | 'bollingerBands'
   | 'superTrend'
   | 'rsi'
   | 'macd'
   | 'stochRsi';
+
+/** Confluence signal engine-də iştirak edə bilən indikatorlar */
+export type SignalIndicatorKey = 'rsi' | 'stochRsi' | 'macd' | 'superTrend' | 'heikinAshi';
+
+export const SIGNAL_INDICATORS: { key: SignalIndicatorKey; label: string }[] = [
+  { key: 'rsi', label: 'RSI' },
+  { key: 'stochRsi', label: 'Stochastic RSI' },
+  { key: 'macd', label: 'MACD' },
+  { key: 'superTrend', label: 'Supertrend' },
+  { key: 'heikinAshi', label: 'Heikin Ashi' },
+];
+
+export type SignalParticipation = Record<SignalIndicatorKey, boolean>;
+
+/**
+ * Data-driven confluence config: hansı indikatorlar BUY / SELL siqnalının
+ * yaranmasında iştirak edir. Deaktiv indikator hesablamaya heç bir təsir etmir.
+ */
+export interface SignalEngineConfig {
+  enabled: boolean;
+  buy: SignalParticipation;
+  sell: SignalParticipation;
+}
+
+export const DEFAULT_SIGNAL_CONFIG: SignalEngineConfig = {
+  enabled: true,
+  buy: { rsi: true, stochRsi: true, macd: true, superTrend: true, heikinAshi: true },
+  sell: { rsi: true, stochRsi: true, macd: true, superTrend: true, heikinAshi: true },
+};
 
 export interface IndicatorSettings {
   candleMode: CandleMode;
@@ -49,7 +77,9 @@ export interface IndicatorSettings {
     panel: boolean;
   };
   superTrend: { period: number; multiplier: number; enabled: boolean };
-  bollingerBands: { period: number; stdDev: number; enabled: boolean };
+  signals: SignalEngineConfig;
+  /** Supply/Demand zone + formasiya analizi — Detail Page default ON */
+  analysis: { supplyZones: boolean; demandZones: boolean; patterns: boolean };
 }
 
 export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
@@ -62,7 +92,8 @@ export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
     oversold: 20, overbought: 80, enabled: true, panel: true,
   },
   superTrend: { period: 10, multiplier: 3, enabled: true },
-  bollingerBands: { period: 20, stdDev: 2, enabled: false },
+  signals: DEFAULT_SIGNAL_CONFIG,
+  analysis: { supplyZones: true, demandZones: true, patterns: true },
 };
 
 export interface ChartThemeColors {
@@ -78,9 +109,6 @@ export interface ChartThemeColors {
   areaBottom: string;
   volumeUp: string;
   volumeDown: string;
-  bbUpper: string;
-  bbMiddle: string;
-  bbLower: string;
   stBull: string;
   stBear: string;
   rsi: string;
@@ -100,9 +128,6 @@ const CHART_COLORS_SHARED = {
   areaBottom: 'rgba(41,98,255,0.02)',
   volumeUp: 'rgba(38,166,154,0.5)',
   volumeDown: 'rgba(239,83,80,0.5)',
-  bbUpper: 'rgba(41,98,255,0.6)',
-  bbMiddle: 'rgba(150,150,150,0.4)',
-  bbLower: 'rgba(41,98,255,0.6)',
   stBull: '#26a69a',
   stBear: '#ef5350',
   rsi: '#7c4dff',

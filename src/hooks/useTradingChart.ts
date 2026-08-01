@@ -9,9 +9,12 @@ import {
   CrosshairMode,
   LineStyle,
   PriceScaleMode,
+  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type MouseEventParams,
+  type Time,
 } from 'lightweight-charts';
 import type { Kline } from '../services/binanceApi';
 import { getChartKlines, CHART_KLINE_LIMIT } from '../services/klineBatchApi';
@@ -26,6 +29,9 @@ import {
   type IndicatorSettings,
 } from '../types/chart';
 import { computeAllChartSeries, displayKlinesForCandles, klinesToCloseLine, toChartTime } from '../utils/chartSeries';
+import { computeConfluenceMarkers } from '../indicators/confluenceSignals';
+import { detectChartZones, type ChartZone } from '../indicators/chartZones';
+import { detectChartPatterns, type ChartPattern } from '../indicators/patterns';
 
 /** TradingView-style OHLCV legend payload (crosshair-follow, falls back to last bar). */
 export interface ChartLegend {
@@ -99,16 +105,15 @@ export function useTradingChart(
 
   const candleSeriesRef = useRef<MainSeries | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const bbUpperRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const bbMiddleRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const bbLowerRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const stSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  /** ST ilə qiymət arasındakı TV-style area fill üçün overlay-ə ötürülən data */
+  const stDataRef = useRef<{ time: number; value: number; trend: 1 | -1 }[]>([]);
   const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const macdHistRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const macdLineRef = useRef<ISeriesApi<'Line'> | null>(null);
   const macdSignalRef = useRef<ISeriesApi<'Line'> | null>(null);
   const stochKRef = useRef<ISeriesApi<'Line'> | null>(null);
   const stochDRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const signalMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
   const paneMapRef = useRef<{ rsi: number; macd: number; stoch: number }>({ rsi: -1, macd: -1, stoch: -1 });
 
@@ -122,6 +127,12 @@ export function useTradingChart(
   const [error, setError] = useState<string | null>(null);
   const [legend, setLegend] = useState<ChartLegend | null>(null);
   const [logScale, setLogScale] = useState(false);
+  /** Supertrend legend: cari dəyər + trend istiqaməti */
+  const [stInfo, setStInfo] = useState<{ value: number; trend: 1 | -1 } | null>(null);
+  /** Aktiv Supply/Demand zonaları (yalnız bağlanmış şamlardan) */
+  const [zones, setZones] = useState<ChartZone[]>([]);
+  /** Təsdiqlənmiş qrafik formasiyaları */
+  const [patterns, setPatterns] = useState<ChartPattern[]>([]);
   const hoveringRef = useRef(false);
 
   settingsRef.current = settings;
@@ -172,6 +183,8 @@ export function useTradingChart(
     const series = computeAllChartSeries(klines, s);
 
     // --- Pane 0: Main chart (candles / heikin ashi / line / area) ---
+    signalMarkersRef.current?.detach();
+    signalMarkersRef.current = null;
     removeSeriesSafe(chart, candleSeriesRef);
     if (s.candleMode === 'line') {
       const line = chart.addSeries(LineSeries, {
@@ -203,6 +216,12 @@ export function useTradingChart(
       candleSeriesRef.current = candle;
     }
 
+    // Confluence signal markers — yalnız bağlanmış şamlar üzərində hesablanır
+    const confluenceMarkers = computeConfluenceMarkers(klines, s);
+    if (confluenceMarkers.length && candleSeriesRef.current) {
+      signalMarkersRef.current = createSeriesMarkers(candleSeriesRef.current, confluenceMarkers);
+    }
+
     if (!hoveringRef.current) {
       const src = displayKlinesForCandles(klines, s.candleMode);
       setLegend(legendFromKline(src[src.length - 1]));
@@ -218,21 +237,31 @@ export function useTradingChart(
       chart.priceScale('volume', 0).applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     }
 
-    [bbUpperRef, bbMiddleRef, bbLowerRef].forEach(ref => removeSeriesSafe(chart, ref));
-    if (s.bollingerBands.enabled) {
-      bbUpperRef.current = chart.addSeries(LineSeries, { color: theme.bbUpper, lineWidth: 1, title: 'BB Upper' }, 0);
-      bbMiddleRef.current = chart.addSeries(LineSeries, { color: theme.bbMiddle, lineWidth: 1, title: 'BB Mid' }, 0);
-      bbLowerRef.current = chart.addSeries(LineSeries, { color: theme.bbLower, lineWidth: 1, title: 'BB Lower' }, 0);
-      bbUpperRef.current.setData(series.bb.upper);
-      bbMiddleRef.current.setData(series.bb.middle);
-      bbLowerRef.current.setData(series.bb.lower);
+    // TradingView-style Supertrend: xətt YOX, yalnız qiymətlə ST səviyyəsi
+    // arasındakı yaşıl (bullish) / qırmızı (bearish) area fill — overlay çəkir.
+    if (s.superTrend.enabled && series.superTrend.length) {
+      const lastSt = series.superTrend[series.superTrend.length - 1];
+      setStInfo({ value: lastSt.value, trend: lastSt.trend });
+      stDataRef.current = series.superTrend.map(p => ({ time: p.time as number, value: p.value, trend: p.trend }));
+    } else {
+      setStInfo(null);
+      stDataRef.current = [];
     }
 
-    removeSeriesSafe(chart, stSeriesRef);
-    if (s.superTrend.enabled && series.superTrend.length) {
-      stSeriesRef.current = chart.addSeries(LineSeries, { color: theme.stBull, lineWidth: 2, title: 'SuperTrend' }, 0);
-      stSeriesRef.current.setData(series.superTrend.map(p => ({ time: p.time, value: p.value })));
+    // Zone + formasiya analizi — yalnız bağlanmış şamlar üzərində (no look-ahead)
+    const needsAnalysis = s.analysis.supplyZones || s.analysis.demandZones || s.analysis.patterns;
+    const closedKlines = needsAnalysis ? klines.filter(k => k.closeTime <= Date.now()) : [];
+
+    if (s.analysis.supplyZones || s.analysis.demandZones) {
+      const allZones = detectChartZones(closedKlines);
+      setZones(allZones.filter(z =>
+        z.type === 'supply' ? s.analysis.supplyZones : s.analysis.demandZones,
+      ));
+    } else {
+      setZones([]);
     }
+
+    setPatterns(s.analysis.patterns ? detectChartPatterns(closedKlines) : []);
 
     chart.panes()[0]?.setHeight(PANE_HEIGHTS.main);
 
@@ -417,6 +446,7 @@ export function useTradingChart(
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
+      signalMarkersRef.current = null;
       paneMapRef.current = { rsi: -1, macd: -1, stoch: -1 };
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -484,7 +514,6 @@ export function useTradingChart(
     setSettings(prev => {
       const next = { ...prev };
       if (key === 'volume') next.volume = { ...prev.volume, enabled: !prev.volume.enabled };
-      else if (key === 'bollingerBands') next.bollingerBands = { ...prev.bollingerBands, enabled: !prev.bollingerBands.enabled };
       else if (key === 'superTrend') next.superTrend = { ...prev.superTrend, enabled: !prev.superTrend.enabled };
       else if (key === 'rsi') next.rsi = { ...prev.rsi, enabled: !prev.rsi.enabled };
       else if (key === 'macd') next.macd = { ...prev.macd, enabled: !prev.macd.enabled };
@@ -515,8 +544,16 @@ export function useTradingChart(
     loading,
     error,
     legend,
+    stInfo,
+    zones,
+    patterns,
     logScale,
     setLogScale,
     takeScreenshot,
+    /** Drawing layer üçün chart/series çıxışı */
+    chartRef,
+    mainSeriesRef: candleSeriesRef,
+    klinesRef,
+    stDataRef,
   };
 }

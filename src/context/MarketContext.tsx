@@ -18,7 +18,6 @@ import { streamKlinesFromServer, batchKlinesFromServer, toKlineAssetRef } from '
 import { BinanceWebSocket, type TickerUpdate } from '../websocket/BinanceWebSocket';
 import { getLatestRSI } from '../indicators/rsi';
 import { getLatestMACD } from '../indicators/macd';
-import { getLatestBB } from '../indicators/bollingerBands';
 import { getLatestATR } from '../indicators/atr';
 import { getLatestStochRSI } from '../indicators/stochRsi';
 import { getLatestSuperTrend } from '../indicators/supertrend';
@@ -106,10 +105,6 @@ export interface CoinData {
   macd: number | null;
   macdSignal: number | null;
   macdHistogram: number | null;
-  bbUpper: number | null;
-  bbMiddle: number | null;
-  bbLower: number | null;
-  bbPercent: number | null;
   atr: number | null;
   atrPercent: number | null;
   stochRsiK: number | null;
@@ -337,12 +332,6 @@ function computeIndicators(
   const macdSignal    = macdResult?.signal    ?? null;
   const macdHistogram = macdResult?.histogram ?? null;
 
-  const bbResult = indicatorCloses.length >= 20 ? getLatestBB(indicatorCloses) : null;
-  const bbUpper  = bbResult?.upper    ?? null;
-  const bbMiddle = bbResult?.middle   ?? null;
-  const bbLower  = bbResult?.lower    ?? null;
-  const bbPercent = bbResult?.percentB ?? null;
-
   const atr        = getLatestATR(primaryK, 14);
   const atrPercent = atr !== null && price > 0 ? (atr / price) * 100 : null;
 
@@ -432,7 +421,6 @@ function computeIndicators(
   return {
     rsi1m, rsi5m, rsi15m, rsi1h, rsi4h, rsi1d,
     macd, macdSignal, macdHistogram,
-    bbUpper, bbMiddle, bbLower, bbPercent,
     atr, atrPercent,
     stochRsiK, stochRsiD,
     superTrend, superTrendValue,
@@ -491,7 +479,6 @@ function buildEmptyCoinFields(): Omit<CoinData, keyof ReturnType<typeof createAs
   return {
     rsi1m: null, rsi5m: null, rsi15m: null, rsi1h: null, rsi4h: null, rsi1d: null,
     macd: null, macdSignal: null, macdHistogram: null,
-    bbUpper: null, bbMiddle: null, bbLower: null, bbPercent: null,
     atr: null, atrPercent: null,
     stochRsiK: null, stochRsiD: null,
     superTrend: null, superTrendValue: null,

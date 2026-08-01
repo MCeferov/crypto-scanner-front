@@ -5,7 +5,6 @@ import type { Signal } from '../indicators/aiSignal';
 import { computeSignal } from '../indicators/aiSignal';
 import { getLatestRSI } from '../indicators/rsi';
 import { getLatestMACD } from '../indicators/macd';
-import { getLatestBB } from '../indicators/bollingerBands';
 import { getLatestATR } from '../indicators/atr';
 import { getLatestStochRSI } from '../indicators/stochRsi';
 import { getLatestSuperTrend } from '../indicators/supertrend';
@@ -183,7 +182,6 @@ export function analyzeFromKlines(
   const closes = klines.map(k => k.close);
   const rsi1h = getLatestRSI(closes, 14);
   const macd = getLatestMACD(closes);
-  const bb = getLatestBB(closes);
   const atr = getLatestATR(klines, 14);
   const atrPercent = atr !== null && price > 0 ? (atr / price) * 100 : null;
   const stoch = getLatestStochRSI(closes);
@@ -203,8 +201,7 @@ export function analyzeFromKlines(
     volume24h: 0, volBuyRatios: { '1m': null, '5m': null, '15m': null, '1h': null, '4h': null, '1d': null },
     rsi1m: null, rsi5m: null, rsi15m: null, rsi1h, rsi4h: null, rsi1d: null,
     macd: macd?.macd ?? null, macdSignal: macd?.signal ?? null, macdHistogram: macd?.histogram ?? null,
-    bbUpper: bb?.upper ?? null, bbMiddle: bb?.middle ?? null, bbLower: bb?.lower ?? null,
-    bbPercent: bb?.percentB ?? null, atr, atrPercent,
+    atr, atrPercent,
     stochRsiK: stoch?.k ?? null, stochRsiD: stoch?.d ?? null,
     superTrend: st?.trend ?? null, superTrendValue: st?.value ?? null,
     trendScore, signal: 'NEUTRAL', signalReasons: [],

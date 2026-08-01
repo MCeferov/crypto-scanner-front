@@ -21,7 +21,6 @@ export interface AssetRowBase {
 const EMPTY_INDICATORS = {
   rsi1m: null, rsi5m: null, rsi15m: null, rsi1h: null, rsi4h: null, rsi1d: null,
   macd: null, macdSignal: null, macdHistogram: null,
-  bbUpper: null, bbMiddle: null, bbLower: null, bbPercent: null,
   atr: null, atrPercent: null,
   stochRsiK: null, stochRsiD: null,
   superTrend: null, superTrendValue: null,
