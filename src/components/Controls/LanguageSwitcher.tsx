@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocale } from '../../context/LocaleContext';
-import { LOCALE_LABELS, SUPPORTED_LOCALES, type Locale } from '@workspace/i18n';
+import { LOCALE_LABELS, SUPPORTED_LOCALES, type Locale } from '@/i18n';
 
 export function LanguageSwitcher() {
   const { locale, setLocale } = useLocale();

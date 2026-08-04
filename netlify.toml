@@ -1,0 +1,33 @@
+# Netlify hosts this SPA only. The API is a separate service on Railway —
+# point the build at it with VITE_API_URL (Site settings → Environment
+# variables). It is read at BUILD time and baked into the bundle, so changing
+# it requires a redeploy, not just a restart.
+
+[build]
+  command = "pnpm build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # --prod=false is defensive: Netlify may set NODE_ENV=production, and the
+  # build toolchain (vite, tailwind, typescript) lives in devDependencies.
+  PNPM_FLAGS = "--frozen-lockfile --prod=false"
+
+# SPA fallback. Without this, any path other than / is a Netlify 404 because
+# no file exists on disk for it — wouter routes client-side.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Vite fingerprints these filenames, so they can never go stale.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# index.html must never be cached or clients keep booting an old bundle.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"

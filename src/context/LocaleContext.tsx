@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   createTranslator, DEFAULT_LOCALE, isValidLocale, type Locale, type TranslateFn,
-} from '@workspace/i18n';
+} from '@/i18n';
 import { apiUrl } from '../services/apiBase';
 
 const STORAGE_KEY = 'app-locale';

@@ -1,4 +1,4 @@
-import type { TranslateFn } from '@workspace/i18n';
+import type { TranslateFn } from '@/i18n';
 import type { CoinData } from '../context/MarketContext';
 import type { Kline } from './binanceApi';
 import type { Signal } from '../indicators/aiSignal';
