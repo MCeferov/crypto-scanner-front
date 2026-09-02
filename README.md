@@ -19,17 +19,37 @@ pnpm install
 cp .env.example .env      # then edit
 ```
 
-## Local development
+## Backend
 
-The backend must be running on `http://localhost:3000` (see its README).
+The API runs on Railway at:
+
+```
+https://crypto-scanner-back-production.up.railway.app
+```
+
+The browser calls it **directly** in dev and in production alike, so the URL
+in DevTools is the real backend. The default lives in
+`src/services/apiBase.ts`; override it with `VITE_API_URL` if the API moves.
+
+Because every call is cross-origin, the backend must return
+`Access-Control-Allow-Origin` for this app's origin — add both
+`http://localhost:5173` and the deployed site to its `FRONTEND_URL`
+allowlist, or the browser blocks the requests.
+
+## Local development
 
 ```bash
 pnpm dev          # http://localhost:5173
 ```
 
-In development `/api/*` is proxied to `API_PROXY_TARGET` by the Vite dev
-server, so requests stay same-origin and CORS is never involved. Leave
-`VITE_API_URL` empty locally.
+Leave `VITE_API_URL` empty — dev uses the same Railway backend, called
+directly.
+
+If CORS is not configured on the backend yet, set `VITE_API_URL=proxy` in
+`.env`. Requests then stay same-origin and the Vite dev server forwards
+`/api/*` to `API_PROXY_TARGET`, sidestepping CORS entirely. The same switch
+is how you develop against a local backend
+(`API_PROXY_TARGET=http://localhost:3000`).
 
 ## Commands
 
@@ -44,21 +64,23 @@ server, so requests stay same-origin and CORS is never involved. Leave
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `VITE_API_URL` | build time | Absolute backend origin. **Empty locally** (the dev proxy handles it); set to the Railway URL on Netlify. Baked into the bundle — changing it needs a rebuild. |
-| `API_PROXY_TARGET` | dev only | Dev-server proxy target. Default `http://localhost:3000`. |
+| `VITE_API_URL` | build time | Absolute backend origin. Optional — defaults to the Railway URL everywhere. The literal `proxy` switches dev to same-origin + the Vite proxy. Baked into the bundle — changing it needs a rebuild. |
+| `API_PROXY_TARGET` | dev only | Where the proxy forwards `/api`, used only with `VITE_API_URL=proxy`. Defaults to the Railway backend. |
 | `PORT` | dev only | Dev/preview port. Default `5173`. |
 | `BASE_PATH` | build/dev | Sub-path the app is served from. Default `/`. |
 
 ## Deployment (Netlify)
 
 `netlify.toml` is committed and configures build, SPA fallback and cache
-headers. In **Site settings → Environment variables** add:
+headers. No environment variables are required: the build already targets
+the Railway backend. To point a deploy somewhere else, add
 
 ```
 VITE_API_URL = https://<your-backend>.up.railway.app
 ```
 
-Then redeploy — the value is compiled into the bundle.
+in **Site settings → Environment variables** and redeploy — the value is
+compiled into the bundle.
 
 The backend must list this site's origin in its `FRONTEND_URL` allowlist or
 every API call fails CORS.

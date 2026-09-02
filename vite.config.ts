@@ -27,10 +27,14 @@ if (Number.isNaN(port) || port <= 0) {
 const basePath = process.env.BASE_PATH ?? "/";
 
 /**
- * Dev-only proxy target for the API. The production bundle never uses this —
- * it calls VITE_API_URL directly (see src/services/apiBase.ts).
+ * Dev-only proxy target for the API. Unused by default — the app calls the
+ * backend directly (see src/services/apiBase.ts). It only comes into play
+ * with VITE_API_URL=proxy, which is the way to dodge CORS in dev or to work
+ * against a local backend (API_PROXY_TARGET=http://localhost:3000).
  */
-const apiProxyTarget = process.env.API_PROXY_TARGET ?? "http://localhost:3000";
+const apiProxyTarget =
+  process.env.API_PROXY_TARGET ??
+  "https://crypto-scanner-back-production.up.railway.app";
 
 export default defineConfig({
   base: basePath,
@@ -55,11 +59,12 @@ export default defineConfig({
       strict: true,
     },
     proxy: {
-      // Same-origin /api in dev so the browser never sees a cross-origin call
-      // and cookies/SSE behave exactly as they do in production.
+      // Same-origin /api so the browser never sees a cross-origin call.
+      // Only reached when VITE_API_URL=proxy.
       "/api": {
         target: apiProxyTarget,
         changeOrigin: true,
+        secure: true,
         configure: (proxy) => {
           proxy.on("proxyRes", (proxyRes, req) => {
             if (req.url?.includes("/klines/stream")) {
