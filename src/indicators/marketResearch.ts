@@ -342,6 +342,8 @@ export function enrichCoinWithResearch(
       bias: afterSetup.rsiBias,
       quality: afterSetup.rsiQuality,
       reasons: [],
+      latchDir: afterSetup.rsiLatch?.[indicatorTf] ?? 0,
+      latchCandles: afterSetup.rsiSignalCandles,
     },
     volume: {
       buyRatio: afterSetup.volBuyRatios['1h'],

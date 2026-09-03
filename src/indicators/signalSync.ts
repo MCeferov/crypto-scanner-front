@@ -2,7 +2,6 @@ import type { CoinData } from '../context/MarketContext';
 import type { SignalAges } from './signalAge';
 import type { MtfTf } from './chartAnalysis';
 import type { SetupSignal } from './setupSignal';
-import { RSI_MILD_OS, RSI_MILD_OB } from './signalConfig';
 
 export type SyncStatus = 'STRONG' | 'GOOD' | 'WEAK' | 'MISMATCH';
 
@@ -68,16 +67,15 @@ function collectSignals(coin: CoinData, ages: SignalAges, activeTfs: MtfTf[]): T
     });
   }
 
-  if (ages.rsiCandles > 0 && coin.rsi1h !== null) {
-    // Vahid mild band — 50 midpoint saxta sync yaratmasın
-    if (coin.rsi1h < RSI_MILD_OS || coin.rsi1h > RSI_MILD_OB) {
-      out.push({
-        id: 'rsi',
-        label: 'RSI 1H',
-        side: coin.rsi1h < RSI_MILD_OS ? 'bull' : 'bear',
-        candles: ages.rsiCandles,
-      });
-    }
+  // RSI latched siqnal: 30 kəsiləndə AL, 70 kəsiləndə SAT — aralıqda siqnal
+  // itmir, ona görə burada da MACD/SuperTrend kimi daimi iştirakçıdır.
+  if (coin.rsiSignal !== 'NEUTRAL' && ages.rsiCandles > 0) {
+    out.push({
+      id: 'rsi',
+      label: 'RSI',
+      side: coin.rsiSignal === 'BUY' ? 'bull' : 'bear',
+      candles: ages.rsiCandles,
+    });
   }
 
   if (ages.stochCandles > 0 && coin.stochRsiK !== null) {
@@ -335,7 +333,7 @@ export function leaderWeightMultiplier(voteLabel: string, sync: SignalSyncResult
     macd: ['MACD'],
     st: ['SuperTrend'],
     ha: ['Heikin Ashi', 'HA trend'],
-    rsi: ['RSI 1H', 'RSI'],
+    rsi: ['RSI'],
     stoch: ['Stoch RSI'],
     chart: ['Chart signal'],
     ai: ['AI indikator'],
@@ -350,8 +348,8 @@ export function leaderWeightMultiplier(voteLabel: string, sync: SignalSyncResult
     'mtf-4h': ['4H chart'],
   };
   const labels = map[sync.syncLeaderId] ?? [sync.syncLeader];
-  if (labels.some(l => voteLabel.toLowerCase().includes(l.toLowerCase()) || voteLabel === l)) {
-    return 1.45;
-  }
+  // Prefix uyğunluğu — "RSI" lideri "Stoch RSI" səsini yanlışlıqla gücləndirməsin
+  const vote = voteLabel.toLowerCase();
+  if (labels.some(l => vote.startsWith(l.toLowerCase()))) return 1.45;
   return 1;
 }

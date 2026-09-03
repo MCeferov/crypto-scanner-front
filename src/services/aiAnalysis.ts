@@ -3,7 +3,9 @@ import type { CoinData } from '../context/MarketContext';
 import type { Kline } from './binanceApi';
 import type { Signal } from '../indicators/aiSignal';
 import { computeSignal } from '../indicators/aiSignal';
-import { getLatestRSI } from '../indicators/rsi';
+import { calculateRSI } from '../indicators/rsi';
+import { rsiLatchFromValues, EMPTY_RSI_LATCH_MAP } from '../indicators/rsiState';
+import { RSI_PERIOD } from '../indicators/signalConfig';
 import { getLatestMACD } from '../indicators/macd';
 import { getLatestATR } from '../indicators/atr';
 import { getLatestStochRSI } from '../indicators/stochRsi';
@@ -75,6 +77,7 @@ export function analyzeFromCoin(coin: CoinData, t: TranslateFn): AIAnalysisResul
     haTrend: coin.haTrend,
     haConsecutive: coin.haConsecutive,
     haSignal: coin.haSignal,
+    rsiLatch: coin.rsiLatch,
   });
 
   const bullishScore = Math.min(100, Math.round((signalResult.bullishCount / 8) * 100));
@@ -180,7 +183,9 @@ export function analyzeFromKlines(
   t: TranslateFn,
 ): AIAnalysisResult {
   const closes = klines.map(k => k.close);
-  const rsi1h = getLatestRSI(closes, 14);
+  // RSI latch — verilən siqnal əks xətt kəsilənə qədər qüvvədə qalır
+  const rsiLatchState = rsiLatchFromValues(calculateRSI(closes, RSI_PERIOD));
+  const rsi1h = rsiLatchState.rsi;
   const macd = getLatestMACD(closes);
   const atr = getLatestATR(klines, 14);
   const atrPercent = atr !== null && price > 0 ? (atr / price) * 100 : null;
@@ -223,6 +228,10 @@ export function analyzeFromKlines(
     syncStatus: 'WEAK' as const, syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [],
     volumeGate: 'neutral', volumeScore: 50, volumeReason: '',
     rsiBias: 'neutral', rsiQuality: 0, rsiRegime: 'range',
+    rsiLatch: { ...EMPTY_RSI_LATCH_MAP, '1h': rsiLatchState.dir },
+    rsiSignal: rsiLatchState.dir === 1 ? 'BUY' : rsiLatchState.dir === -1 ? 'SELL' : 'NEUTRAL',
+    rsiSignalCandles: rsiLatchState.candles,
+    rsiTriggerValue: rsiLatchState.triggerRsi,
     sentimentScore: 0, sentimentLabel: 'Neytral',
     confidence: 0, confidenceSide: 'NONE', confidenceReasons: [],
     indicatorsLoaded: true,

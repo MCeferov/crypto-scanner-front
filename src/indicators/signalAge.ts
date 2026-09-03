@@ -8,7 +8,7 @@ import type { ChartSignal } from './chartAnalysis';
 import type { SetupSignal } from './setupSignal';
 import type { ZonePosition, ZoneBreakoutSignal } from './supplyDemand';
 import { calculateStochRSI } from './stochRsi';
-import { calculateRSI } from './rsi';
+import { computeRsiLatch } from './rsiState';
 
 /** Qısa TF-lərdə MACD uzun müddət eyni işarədə qala bilər — 48 cap detail ilə uyğunsuzluq yaradırdı */
 const MAX_LOOKBACK = 1000;
@@ -86,25 +86,18 @@ function stochBias(k: number, d: number): string {
 }
 
 /**
- * RSI/StochRSI are forward-recursive, so the value at prefix length L equals
- * series[L - offset] of one full computation — walking the precomputed series
- * backwards is identical to the old slice-and-recompute loop, but O(n)
- * instead of O(n²).
+ * RSI yaşı = son LATCH flip-indən bəri şam sayı, MACD-dəki kimi.
+ *
+ * Əvvəl bu 50 xəttinin hansı tərəfində olmağa görə sayılırdı, ona görə RSI
+ * xətti kəsən kimi yaş sıfırlanır və siqnal "itmiş" görünürdü. İndi yalnız
+ * əks trigger (30 ↔ 70 kəsişməsi) sayğacı sıfırlayır.
+ *
+ * RSI forward-recursive olduğuna görə bir dəfə hesablanmış seriya üzərində
+ * geriyə getmək slice-and-recompute döngüsü ilə eynidir, amma O(n²) yox O(n).
  */
 function countRsiPersistence(closes: number[]): number {
   if (closes.length < 20) return 0;
-  const series = calculateRSI(closes, 14);
-  if (series.length === 0) return 0;
-  const last = series[series.length - 1];
-  const bull = last < 50;
-
-  let count = 0;
-  for (let i = series.length - 1; i >= 0 && count < MAX_LOOKBACK; i--) {
-    const matches = bull ? series[i] < 52 : series[i] > 48;
-    if (matches) count++;
-    else break;
-  }
-  return count;
+  return computeRsiLatch(closes, { maxLookback: MAX_LOOKBACK }).candles;
 }
 
 function countStochPersistence(closes: number[]): number {

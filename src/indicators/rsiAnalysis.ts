@@ -1,4 +1,5 @@
 import { calculateRSI, getLatestRSI } from './rsi';
+import { rsiLatchFromValues, type RsiDir, type RsiLatchState } from './rsiState';
 import {
   RSI_PERIOD,
   RSI_STRONG_OS,
@@ -28,6 +29,10 @@ export interface RsiAnalysisResult {
   bias: RsiBias;
   quality: number;
   reasons: string[];
+  /** Qüvvədə olan RSI siqnalı — əks xətt kəsilənə qədər dəyişmir */
+  latchDir: RsiDir;
+  /** Həmin siqnalın yaşı (şam) */
+  latchCandles: number;
 }
 
 function emaSlope(closes: number[], period = 20): number | null {
@@ -65,13 +70,21 @@ function detectRegime(
 }
 
 /**
- * RSI interpretasiya: səviyyə + momentum (slope/turning) + higher-TF trend gate.
- * Güclü downtrend-də erkən AL, güclü uptrend-də erkən SAT bloklanır.
+ * RSI interpretasiya: LATCH + səviyyə + momentum (slope/turning) + trend gate.
+ *
+ * İstiqamət latch-dən gəlir: RSI 30-u aşağı kəsdikdə AL siqnalı yaranır və
+ * RSI xəttin üstünə qayıtsa belə siqnal itmir — 70 kəsilib SAT verilənə qədər
+ * AL qüvvədə qalır (MACD histoqramı ilə eyni məntiq). Cari səviyyə (OS/OB
+ * bantları) və momentum yalnız siqnalın KEYFİYYƏTİNİ təyin edir, onu söndürmür.
+ *
+ * Trend gate saxlanılır: güclü downtrend-də RSI hələ də oversold bantındadırsa
+ * erkən AL bloklanır (falling knife), güclü uptrend-də erkən SAT bloklanır.
  */
 export function analyzeRsi(input: RsiAnalysisInput): RsiAnalysisResult {
   const reasons: string[] = [];
   const values = calculateRSI(input.closes, RSI_PERIOD);
   const rsi = values.length ? values[values.length - 1] : null;
+  const latch: RsiLatchState = rsiLatchFromValues(values);
 
   let slope: number | null = null;
   let turningUp = false;
@@ -94,6 +107,7 @@ export function analyzeRsi(input: RsiAnalysisInput): RsiAnalysisResult {
     return {
       rsi: null, slope, turningUp, turningDown, regime,
       bias: 'neutral', quality: 0, reasons: ['RSI məlumatı yoxdur'],
+      latchDir: 0, latchCandles: 0,
     };
   }
 
@@ -102,73 +116,77 @@ export function analyzeRsi(input: RsiAnalysisInput): RsiAnalysisResult {
   if (turningUp) reasons.push('RSI turning ▲');
   if (turningDown) reasons.push('RSI turning ▼');
 
-  let bias: RsiBias = 'neutral';
-  let quality = 40;
-
   const strongOs = rsi < RSI_STRONG_OS;
   const mildOs = rsi < RSI_MILD_OS;
   const strongOb = rsi > RSI_STRONG_OB;
   const mildOb = rsi > RSI_MILD_OB;
 
-  // Range: səviyyə siqnallarını zəiflətmək
+  // Latch qüvvədə olan siqnalı verir. Latch hələ yaranmayıbsa (heç bir xətt
+  // kəsilməyib) mild bant fallback kimi işləyir ki, warm-up-da da nəticə olsun.
+  const bull = latch.dir === 1 || (latch.dir === 0 && mildOs);
+  const bear = latch.dir === -1 || (latch.dir === 0 && mildOb);
+
+  if (latch.dir !== 0) {
+    reasons.push(
+      `RSI siqnalı: ${latch.dir === 1 ? 'AL' : 'SAT'} — ${latch.candles} şam ` +
+      `(əks xətt kəsilənə qədər qüvvədə)`,
+    );
+  }
+
+  // Keyfiyyət: latch istiqaməti + cari zona/momentum onu gücləndirir
+  const bullQuality = strongOs && turningUp ? 85
+    : strongOs || (mildOs && turningUp) ? 72
+    : mildOs ? 62
+    : turningUp ? 55
+    : 48;
+  const bearQuality = strongOb && turningDown ? 85
+    : strongOb || (mildOb && turningDown) ? 72
+    : mildOb ? 62
+    : turningDown ? 55
+    : 48;
+
+  const done = (bias: RsiBias, quality: number, note?: string): RsiAnalysisResult => {
+    if (note) reasons.push(note);
+    return {
+      rsi, slope, turningUp, turningDown, regime, bias, quality, reasons,
+      latchDir: latch.dir, latchCandles: latch.candles,
+    };
+  };
+
+  // Range: latch saxlanılır, amma yatay bazarda keyfiyyət aşağı salınır
   if (regime === 'range') {
-    if (strongOs && turningUp) {
-      bias = 'bullish';
-      quality = 55;
-      reasons.push('Range + güclü OS + turning — ehtiyatlı AL');
-    } else if (strongOb && turningDown) {
-      bias = 'bearish';
-      quality = 55;
-      reasons.push('Range + güclü OB + turning — ehtiyatlı SAT');
-    } else {
-      bias = 'neutral';
-      quality = 25;
-      reasons.push('Yatay bazar — RSI səviyyə siqnalı söndürülüb');
+    if (bull) {
+      return done('bullish', Math.min(bullQuality, strongOs && turningUp ? 60 : 45),
+        'Yatay bazar — RSI AL siqnalı qüvvədə, keyfiyyət aşağı');
     }
-    return { rsi, slope, turningUp, turningDown, regime, bias, quality, reasons };
+    if (bear) {
+      return done('bearish', Math.min(bearQuality, strongOb && turningDown ? 60 : 45),
+        'Yatay bazar — RSI SAT siqnalı qüvvədə, keyfiyyət aşağı');
+    }
+    return done('neutral', 25, 'Yatay bazar — RSI siqnalı yoxdur');
   }
 
-  // Güclü downtrend: erkən AL blok
+  // Güclü downtrend: RSI hələ oversold bantındadırsa erkən AL blok
   if (regime === 'downtrend') {
-    if (mildOb || strongOb) {
-      if (turningDown || strongOb) {
-        bias = 'bearish';
-        quality = strongOb && turningDown ? 85 : 70;
-        reasons.push('Downtrend + RSI yüksək — SAT uyğun');
-      }
-    } else if (mildOs || strongOs) {
-      bias = 'blocked';
-      quality = 15;
-      reasons.push('Downtrend — oversold AL bloklandı (falling knife)');
-    } else {
-      bias = 'bearish';
-      quality = 45;
-      reasons.push('Downtrend — neytral/ayı təzyiqi');
+    if (bear) return done('bearish', bearQuality, 'Downtrend + RSI SAT — uyğun');
+    if (bull && (mildOs || strongOs)) {
+      return done('blocked', 15, 'Downtrend — oversold AL bloklandı (falling knife)');
     }
-    return { rsi, slope, turningUp, turningDown, regime, bias, quality, reasons };
+    if (bull) return done('bullish', Math.min(bullQuality, 45), 'Downtrend — RSI AL trendə zidd, zəif');
+    return done('bearish', 45, 'Downtrend — neytral/ayı təzyiqi');
   }
 
-  // Güclü uptrend: erkən SAT blok
+  // Güclü uptrend: RSI hələ overbought bantındadırsa erkən SAT blok
   if (regime === 'uptrend') {
-    if (mildOs || strongOs) {
-      if (turningUp || strongOs) {
-        bias = 'bullish';
-        quality = strongOs && turningUp ? 85 : 70;
-        reasons.push('Uptrend + RSI aşağı — AL uyğun');
-      }
-    } else if (mildOb || strongOb) {
-      bias = 'blocked';
-      quality = 15;
-      reasons.push('Uptrend — overbought SAT bloklandı (early short)');
-    } else {
-      bias = 'bullish';
-      quality = 45;
-      reasons.push('Uptrend — neytral/öküz təzyiqi');
+    if (bull) return done('bullish', bullQuality, 'Uptrend + RSI AL — uyğun');
+    if (bear && (mildOb || strongOb)) {
+      return done('blocked', 15, 'Uptrend — overbought SAT bloklandı (early short)');
     }
-    return { rsi, slope, turningUp, turningDown, regime, bias, quality, reasons };
+    if (bear) return done('bearish', Math.min(bearQuality, 45), 'Uptrend — RSI SAT trendə zidd, zəif');
+    return done('bullish', 45, 'Uptrend — neytral/öküz təzyiqi');
   }
 
-  return { rsi, slope, turningUp, turningDown, regime, bias, quality, reasons };
+  return done(bull ? 'bullish' : bear ? 'bearish' : 'neutral', bull || bear ? 45 : 40);
 }
 
 /** Setup/AI üçün skor: 1–5 (3 = neytral) */

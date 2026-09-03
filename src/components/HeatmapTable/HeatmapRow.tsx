@@ -444,7 +444,14 @@ export const HeatmapRow = memo(function HeatmapRow({
       default:
         if (colId.startsWith('rsi-')) {
           const tf = colId.slice(4) as RsiTf;
-          return <RSICell key={colId} value={coin[RSI_KEY[tf]] as number | null} loaded={loaded} />;
+          return (
+            <RSICell
+              key={colId}
+              value={coin[RSI_KEY[tf]] as number | null}
+              loaded={loaded}
+              dir={coin.rsiLatch?.[tf] ?? 0}
+            />
+          );
         }
         return null;
     }

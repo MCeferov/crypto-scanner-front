@@ -1,5 +1,6 @@
 import type { Kline } from '../services/binanceApi';
-import { getLatestRSI } from './rsi';
+import { calculateRSI } from './rsi';
+import { rsiLatchFromValues } from './rsiState';
 import { getLatestMACD } from './macd';
 import { getLatestSuperTrend } from './supertrend';
 import { analyzeHeikinAshi } from './heikinAshi';
@@ -52,7 +53,10 @@ export function analyzeTimeframe(klines: Kline[], tf: MtfTf): TfAnalysis {
 
   // Raw closes — cədvəl RSI / digər indikatorlarla eyni bazis (HA yalnız ayrı filtr)
   const closes = klines.map(k => k.close);
-  const rsi = getLatestRSI(closes, 14);
+  const rsiValues = calculateRSI(closes, 14);
+  const rsi = rsiValues.length ? rsiValues[rsiValues.length - 1] : null;
+  // RSI latch — verilən siqnal əks xətt kəsilənə qədər qüvvədə qalır
+  const rsiLatch = rsiLatchFromValues(rsiValues);
   const macdHist = getLatestMACD(closes)?.histogram ?? null;
   const st = getLatestSuperTrend(klines);
   const ha = analyzeHeikinAshi(klines);
@@ -79,11 +83,21 @@ export function analyzeTimeframe(klines: Kline[], tf: MtfTf): TfAnalysis {
     else { score -= 1.5; reasons.push('MACD-'); }
   }
 
+  // RSI: əsas töhfə latch-dən (MACD kimi davamlı), cari bant onu gücləndirir.
+  // Beləliklə RSI xəttdən geri qayıdanda TF skoru birdən-birə sıfırlanmır.
+  if (rsiLatch.dir === 1) {
+    score += 1;
+    reasons.push(`RSI AL ▲${rsiLatch.candles}`);
+  } else if (rsiLatch.dir === -1) {
+    score -= 1;
+    reasons.push(`RSI SAT ▼${rsiLatch.candles}`);
+  }
+
   if (rsi !== null) {
-    if (rsi < RSI_STRONG_OS) { score += 1.5; reasons.push(`RSI ${rsi.toFixed(0)} OS`); }
-    else if (rsi < RSI_MILD_OS) { score += 0.5; }
-    else if (rsi > RSI_STRONG_OB) { score -= 1.5; reasons.push(`RSI ${rsi.toFixed(0)} OB`); }
-    else if (rsi > RSI_MILD_OB) { score -= 0.5; }
+    if (rsi < RSI_STRONG_OS) { score += 0.5; reasons.push(`RSI ${rsi.toFixed(0)} OS`); }
+    else if (rsi < RSI_MILD_OS) { score += 0.25; }
+    else if (rsi > RSI_STRONG_OB) { score -= 0.5; reasons.push(`RSI ${rsi.toFixed(0)} OB`); }
+    else if (rsi > RSI_MILD_OB) { score -= 0.25; }
   }
 
   let signal: TfDir = 'NEUTRAL';

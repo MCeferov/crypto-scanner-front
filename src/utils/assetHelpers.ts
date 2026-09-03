@@ -1,4 +1,5 @@
 import type { NormalizedAsset } from '../services/marketApi';
+import { EMPTY_RSI_LATCH_MAP } from '../indicators/rsiState';
 import {
   assetId, backendClassToType, POPULARITY_RANK, SEARCH_ALIASES,
   type AssetType,
@@ -41,6 +42,8 @@ const EMPTY_INDICATORS = {
   macdCandles: 0, stCandles: 0, stochCandles: 0, haCandles: 0,
   chartCandles: 0, aiCandles: 0, zoneCandles: 0, setupCandles: 0, rsiCandles: 0,
   syncStatus: 'WEAK' as const, syncScore: 0, syncLeader: '—', syncLeaderId: '', syncLeaderCandles: 0, syncReasons: [] as string[],
+  rsiLatch: { ...EMPTY_RSI_LATCH_MAP },
+  rsiSignal: 'NEUTRAL' as const, rsiSignalCandles: 0, rsiTriggerValue: null as number | null,
   indicatorsLoaded: false,
 };
 

@@ -6,45 +6,24 @@ import { calculateMACD } from './macd';
 import { calculateStochRSI } from './stochRsi';
 import { calculateSuperTrend } from './supertrend';
 import { toHeikinAshi } from './heikinAshi';
-
-/** Bir şam üçün indikatorun istiqaməti: 1 = BUY, -1 = SELL, 0 = NEUTRAL */
-type SignalDir = 1 | 0 | -1;
-
-/**
- * Trigger-əsaslı istiqaməti latch edir: indikator bir dəfə BUY (və ya SELL)
- * verdikdə əks trigger gələnə qədər həmin vəziyyətdə qalır.
- *
- * Məsələn RSI 70-i keçib SELL verirsə, 69-a düşəndə "artıq siqnal yoxdur"
- * olmur — RSI 30-un altına düşüb BUY verənə qədər SELL saxlanılır.
- * İlk trigger-ə qədər (warm-up) 0 = NEUTRAL qalır, yəni siqnal yaranmır.
- */
-function latch(triggers: SignalDir[]): SignalDir[] {
-  const out: SignalDir[] = new Array(triggers.length).fill(0);
-  let state: SignalDir = 0;
-  for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i] !== 0) state = triggers[i];
-    out[i] = state;
-  }
-  return out;
-}
+import { latchDirs, type SignalDir } from './signalLatch';
+import { rsiTriggerDirs } from './rsiState';
 
 const BUY_COLOR = '#26a69a';
 const SELL_COLOR = '#ef5350';
 
 /**
  * Hər indikator üçün kline massivi ilə eyni uzunluqda TRIGGER massivi qurulur.
- * Buradakı 0 "trigger yoxdur" deməkdir — sonra latch() onu son aktiv
+ * Buradakı 0 "trigger yoxdur" deməkdir — sonra latchDirs() onu son aktiv
  * istiqamətlə doldurur. Warm-up dövründə (indikator hələ hesablana bilmir)
  * dəyər 0 qalır və latch də 0 saxlayır, ona görə siqnal yaranmır.
  */
 function rsiDirs(klines: Kline[], s: IndicatorSettings): SignalDir[] {
   const dirs: SignalDir[] = new Array(klines.length).fill(0);
   const values = calculateRSI(klines.map(k => k.close), s.rsi.period);
+  const triggers = rsiTriggerDirs(values, s.rsi.oversold, s.rsi.overbought);
   const offset = klines.length - values.length;
-  for (let i = 0; i < values.length; i++) {
-    if (values[i] < s.rsi.oversold) dirs[offset + i] = 1;
-    else if (values[i] > s.rsi.overbought) dirs[offset + i] = -1;
-  }
+  for (let i = 0; i < triggers.length; i++) dirs[offset + i] = triggers[i];
   return dirs;
 }
 
@@ -128,7 +107,7 @@ export function computeConfluenceMarkers(
   // əks trigger gələnə qədər qüvvədə qalır.
   const dirs = new Map<SignalIndicatorKey, SignalDir[]>();
   for (const key of new Set([...buyKeys, ...sellKeys])) {
-    dirs.set(key, latch(DIR_BUILDERS[key](klines, settings)));
+    dirs.set(key, latchDirs(DIR_BUILDERS[key](klines, settings)));
   }
 
   const buyAt = (i: number) =>

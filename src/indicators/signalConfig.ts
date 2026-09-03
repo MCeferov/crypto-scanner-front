@@ -16,6 +16,17 @@ export const RSI_MILD_OB = 62;
 /** Orta zona — neytral / range */
 export const RSI_MID = 50;
 
+/**
+ * RSI latch (state) xətləri — MACD məntiqi ilə eyni.
+ *
+ * RSI bu xətti aşağı kəsdikdə BUY siqnalı yaranır və RSI xəttin üstünə
+ * qayıtdıqda siqnal İTMİR: əks xətt (RSI_LATCH_OB) kəsilib SELL verilənə
+ * qədər BUY qüvvədə qalır. Beləliklə RSI da MACD kimi "buy → sell → buy"
+ * kimi davamlı vəziyyət saxlayır, aktiv/deaktiv kimi yanıb-sönmür.
+ */
+export const RSI_LATCH_OS = 30;
+export const RSI_LATCH_OB = 70;
+
 /** Volume təsdiqi */
 export const VOL_BUY_RATIO_CONFIRM = 0.55;
 export const VOL_SELL_RATIO_CONFIRM = 0.45;

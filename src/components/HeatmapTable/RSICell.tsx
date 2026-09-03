@@ -1,13 +1,22 @@
 import React from 'react';
 import { getRSIColor, getRSIBg } from '../../utils/colors';
 import { formatRSI } from '../../utils/formatters';
+import type { RsiDir } from '../../indicators/rsiState';
 
 interface RSICellProps {
   value: number | null;
   loaded: boolean;
+  /**
+   * Qüvvədə olan RSI siqnalı (latch). RSI xəttdən geri qayıtsa da bu
+   * göstərici əks xətt kəsilənə qədər dəyişmir — MACD kimi.
+   */
+  dir?: RsiDir;
 }
 
-export const RSICell = React.memo(function RSICell({ value, loaded }: RSICellProps) {
+const BUY_COLOR = '#26a69a';
+const SELL_COLOR = '#ef5350';
+
+export const RSICell = React.memo(function RSICell({ value, loaded, dir = 0 }: RSICellProps) {
   if (!loaded) {
     return (
       <td className="px-2 py-2 text-center" style={{ minWidth: 60 }}>
@@ -24,7 +33,9 @@ export const RSICell = React.memo(function RSICell({ value, loaded }: RSICellPro
     );
   }
 
-  const label = value < 25 ? 'OS' : value > 75 ? 'OB' : '';
+  // Zonada olduqda OS/OB, əks halda qüvvədə qalan latch istiqaməti
+  const zoneLabel = value < 25 ? 'OS' : value > 75 ? 'OB' : '';
+  const latchLabel = dir === 1 ? '▲' : dir === -1 ? '▼' : '';
 
   return (
     <td className="px-2 py-2 text-center" style={{ minWidth: 60 }}>
@@ -35,10 +46,23 @@ export const RSICell = React.memo(function RSICell({ value, loaded }: RSICellPro
           color: getRSIColor(value),
           minWidth: 46,
         }}
+        title={
+          dir === 1 ? 'RSI siqnalı: AL — SAT xətti kəsilənə qədər qüvvədə'
+          : dir === -1 ? 'RSI siqnalı: SAT — AL xətti kəsilənə qədər qüvvədə'
+          : 'RSI siqnalı yoxdur'
+        }
       >
         {formatRSI(value)}
-        {label && (
-          <span className="text-[10px] font-bold opacity-80">{label}</span>
+        {zoneLabel && (
+          <span className="text-[10px] font-bold opacity-80">{zoneLabel}</span>
+        )}
+        {!zoneLabel && latchLabel && (
+          <span
+            className="text-[10px] font-bold"
+            style={{ color: dir === 1 ? BUY_COLOR : SELL_COLOR }}
+          >
+            {latchLabel}
+          </span>
         )}
       </div>
     </td>

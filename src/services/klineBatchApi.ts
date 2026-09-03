@@ -28,11 +28,30 @@ function encodeAssets(assets: KlineAssetRef[]): string {
   return assets.map(a => `${a.type}:${a.symbol}`).join(',');
 }
 
+/**
+ * Server bir sorğuda yalnız ilk 80 aktivi emal edir və qalanını SƏSSİZCƏ atır —
+ * nə xəta qaytarır, nə də kəsilmə barədə xəbər verir (SSE sadəcə `complete`
+ * göndərir, batch isə 80 açarlı obyekt). Yəni siyahı bölünməsə, sondakı
+ * aktivlər heç vaxt kline almır və cədvəldə həmişəlik boş qalır.
+ *
+ * Burada 60 götürülür ki, serverin limiti bir az aşağı düşsə belə işləsin.
+ */
+const MAX_ASSETS_PER_REQUEST = 60;
+
+function chunkAssets(assets: KlineAssetRef[]): KlineAssetRef[][] {
+  if (assets.length <= MAX_ASSETS_PER_REQUEST) return [assets];
+  const out: KlineAssetRef[][] = [];
+  for (let i = 0; i < assets.length; i += MAX_ASSETS_PER_REQUEST) {
+    out.push(assets.slice(i, i + MAX_ASSETS_PER_REQUEST));
+  }
+  return out;
+}
+
 /** Server-side SSE — crypto (Binance) + digər assetlər (Yahoo) */
-export function streamKlinesFromServer(
+function streamChunk(
   assets: KlineAssetRef[],
   intervals: readonly string[],
-  onAsset: (id: string, klines: Record<string, Kline[]>, done: number, total: number) => void,
+  onAsset: (id: string, klines: Record<string, Kline[]>) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const qs = new URLSearchParams({
@@ -55,9 +74,7 @@ export function streamKlinesFromServer(
           return;
         }
         const id = msg.id ?? msg.symbol;
-        if (id && msg.klines) {
-          onAsset(id, msg.klines, msg.done ?? 0, msg.total ?? assets.length);
-        }
+        if (id && msg.klines) onAsset(id, msg.klines);
       } catch {
         /* ignore parse */
       }
@@ -70,11 +87,30 @@ export function streamKlinesFromServer(
   });
 }
 
-/** Bir POST ilə batch (SSE işləməsə fallback) */
-export async function batchKlinesFromServer(
+/**
+ * Bütün aktivləri stream edir — server limitindən asılı olmayaraq HAMISINI.
+ * Hissələr ardıcıl gedir ki, Yahoo/Binance eyni anda çox sorğu almasın;
+ * `done` sayğacı hissələr arasında davam edir, ona görə progress bar geri
+ * atmır.
+ */
+export async function streamKlinesFromServer(
   assets: KlineAssetRef[],
-  intervals: readonly string[] = ESSENTIAL_TIMEFRAMES,
-  refresh = false,
+  intervals: readonly string[],
+  onAsset: (id: string, klines: Record<string, Kline[]>, done: number, total: number) => void,
+): Promise<void> {
+  let done = 0;
+  for (const group of chunkAssets(assets)) {
+    await streamChunk(group, intervals, (id, klines) => {
+      done++;
+      onAsset(id, klines, done, assets.length);
+    });
+  }
+}
+
+async function batchChunk(
+  assets: KlineAssetRef[],
+  intervals: readonly string[],
+  refresh: boolean,
 ): Promise<Map<string, Record<string, Kline[]>>> {
   const res = await fetch(apiUrl('/api/markets/klines/batch'), {
     method: 'POST',
@@ -84,6 +120,23 @@ export async function batchKlinesFromServer(
   if (!res.ok) throw new Error(`Batch klines failed: ${res.status}`);
   const json = await res.json() as { data: Record<string, Record<string, Kline[]>> };
   return new Map(Object.entries(json.data ?? {}));
+}
+
+/** Bir POST ilə batch (SSE işləməsə fallback) — 80-lik server limiti bölünür */
+export async function batchKlinesFromServer(
+  assets: KlineAssetRef[],
+  intervals: readonly string[] = ESSENTIAL_TIMEFRAMES,
+  refresh = false,
+): Promise<Map<string, Record<string, Kline[]>>> {
+  const groups = chunkAssets(assets);
+  if (groups.length === 1) return batchChunk(assets, intervals, refresh);
+
+  const merged = new Map<string, Record<string, Kline[]>>();
+  for (const group of groups) {
+    const part = await batchChunk(group, intervals, refresh);
+    part.forEach((klines, id) => merged.set(id, klines));
+  }
+  return merged;
 }
 
 /** Chart səhifəsi üçün tək asset klines */

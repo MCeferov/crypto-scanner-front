@@ -5,6 +5,7 @@ import {
   RSI_MILD_OB,
 } from './signalConfig';
 import type { RsiAnalysisResult } from './rsiAnalysis';
+import type { RsiLatchMap } from './rsiState';
 import type { VolumeGate } from './volumeConfirmation';
 
 export type Signal = 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'SELL' | 'STRONG_SELL';
@@ -22,6 +23,8 @@ export interface SignalInput {
   haSignal: import('./heikinAshi').HaSignal;
   /** Optional: rsiAnalysis engine */
   rsiAnalysis?: RsiAnalysisResult | null;
+  /** TF üzrə latched RSI istiqaməti — siqnal əks xətt kəsilənə qədər qüvvədə */
+  rsiLatch?: RsiLatchMap | null;
   /** Optional: volume gate */
   volumeGate?: VolumeGate | null;
 }
@@ -55,6 +58,12 @@ export function computeSignal(input: SignalInput): SignalResult {
     } else if (ra.bias === 'blocked') {
       reasons.push(ra.reasons.find(r => r.includes('blok')) ?? 'RSI trend-gate blocked');
     }
+  } else if (input.rsiLatch?.['1h'] === 1) {
+    bullishCount += input.rsi1h !== null && input.rsi1h < RSI_STRONG_OS ? 2 : 1;
+    reasons.push('RSI 1H AL qüvvədə');
+  } else if (input.rsiLatch?.['1h'] === -1) {
+    bearishCount += input.rsi1h !== null && input.rsi1h > RSI_STRONG_OB ? 2 : 1;
+    reasons.push('RSI 1H SAT qüvvədə');
   } else if (input.rsi1h !== null) {
     if (input.rsi1h < RSI_STRONG_OS) { bullishCount += 2; reasons.push('RSI 1H güclü oversold'); }
     else if (input.rsi1h < RSI_MILD_OS) { bullishCount += 1; reasons.push('RSI 1H low'); }
@@ -62,14 +71,24 @@ export function computeSignal(input: SignalInput): SignalResult {
     else if (input.rsi1h > RSI_MILD_OB) { bearishCount += 1; reasons.push('RSI 1H high'); }
   }
 
-  if (input.rsi4h !== null) {
-    if (input.rsi4h < RSI_MILD_OS) { bullishCount += 1; reasons.push('RSI 4H oversold'); }
-    else if (input.rsi4h > RSI_MILD_OB) { bearishCount += 1; reasons.push('RSI 4H overbought'); }
-  }
-  if (input.rsi1d !== null) {
-    if (input.rsi1d < RSI_MILD_OS) { bullishCount += 1; reasons.push('RSI 1D oversold'); }
-    else if (input.rsi1d > RSI_MILD_OB) { bearishCount += 1; reasons.push('RSI 1D overbought'); }
-  }
+  // Yüksək TF RSI: latch varsa ondan, yoxsa səviyyə bantından səs verilir.
+  // Latch sayəsində RSI xəttdən qayıdanda 4H/1D səsi birdən yox olmur.
+  const latch = input.rsiLatch;
+
+  const htfVote = (
+    dir: 1 | 0 | -1 | undefined,
+    value: number | null,
+    label: string,
+  ) => {
+    if (dir === 1) { bullishCount += 1; reasons.push(`RSI ${label} AL qüvvədə`); return; }
+    if (dir === -1) { bearishCount += 1; reasons.push(`RSI ${label} SAT qüvvədə`); return; }
+    if (value === null) return;
+    if (value < RSI_MILD_OS) { bullishCount += 1; reasons.push(`RSI ${label} oversold`); }
+    else if (value > RSI_MILD_OB) { bearishCount += 1; reasons.push(`RSI ${label} overbought`); }
+  };
+
+  htfVote(latch?.['4h'], input.rsi4h, '4H');
+  htfVote(latch?.['1d'], input.rsi1d, '1D');
 
   if (macdBullish) { bullishCount += 1; reasons.push('MACD bullish'); }
   if (macdBearish) { bearishCount += 1; reasons.push('MACD bearish'); }

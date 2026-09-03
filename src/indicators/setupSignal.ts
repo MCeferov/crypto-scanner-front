@@ -17,6 +17,7 @@ import {
 } from './signalConfig';
 import type { VolumeGate } from './volumeConfirmation';
 import type { RsiBias } from './rsiAnalysis';
+import type { RsiDir, RsiTfKey } from './rsiState';
 import { sentimentBlocksSide } from './marketSentiment';
 
 export type SetupSignal =
@@ -83,7 +84,23 @@ function riskScore(rr: number | null, bullish: boolean): number {
   return 3;
 }
 
-function rsiScore(rsi: number | null): number {
+/**
+ * RSI səsi latch istiqamətindən gəlir — siqnal əks xətt kəsilənə qədər
+ * qüvvədə qalır, RSI xəttdən geri qayıdanda səs neytrala düşmür.
+ * Cari səviyyə yalnız səsin gücünü artırır.
+ */
+function rsiScore(rsi: number | null, dir: RsiDir): number {
+  if (dir === 1) {
+    if (rsi !== null && rsi < RSI_STRONG_OS) return 4.6;
+    if (rsi !== null && rsi < RSI_MILD_OS) return 4.2;
+    return 3.9;
+  }
+  if (dir === -1) {
+    if (rsi !== null && rsi > RSI_STRONG_OB) return 1.4;
+    if (rsi !== null && rsi > RSI_MILD_OB) return 1.8;
+    return 2.1;
+  }
+  // Latch hələ yaranmayıb (heç bir xətt kəsilməyib) — səviyyə fallback
   if (rsi === null) return 3;
   if (rsi < RSI_STRONG_OS) return 4.6;
   if (rsi < RSI_MILD_OS) return 3.8;
@@ -275,19 +292,23 @@ export function computeUnifiedSetup(
     });
   }
 
-  const rsiVotes = [
-    { rsi: coin.rsi15m, tf: '15m' },
-    { rsi: coin.rsi1h, tf: '1H' },
-    { rsi: coin.rsi4h, tf: '4H' },
-  ].filter(r => r.rsi !== null);
+  const rsiVotes: { rsi: number | null; tf: RsiTfKey; label: string }[] = [
+    { rsi: coin.rsi15m, tf: '15m', label: '15m' },
+    { rsi: coin.rsi1h, tf: '1h', label: '1H' },
+    { rsi: coin.rsi4h, tf: '4h', label: '4H' },
+  ];
 
-  for (const { rsi, tf } of rsiVotes) {
-    const score = opts?.rsiBias === 'blocked' ? 3 : rsiScore(rsi);
+  for (const { rsi, tf, label } of rsiVotes) {
+    const dir = coin.rsiLatch?.[tf] ?? 0;
+    // Latch qüvvədədirsə RSI dəyəri hələ yüklənməsə belə səs verə bilir
+    if (rsi === null && dir === 0) continue;
+    const score = opts?.rsiBias === 'blocked' ? 3 : rsiScore(rsi, dir);
+    const state = dir === 1 ? ' · AL qüvvədə' : dir === -1 ? ' · SAT qüvvədə' : '';
     votes.push({
       score,
-      weight: tf === '1H' ? 1.2 : 0.8,
-      label: `RSI ${tf}`,
-      reasons: [`RSI ${tf} ${rsi!.toFixed(0)}`],
+      weight: tf === '1h' ? 1.2 : 0.8,
+      label: `RSI ${label}`,
+      reasons: [`RSI ${label} ${rsi !== null ? rsi.toFixed(0) : '—'}${state}`],
     });
   }
 

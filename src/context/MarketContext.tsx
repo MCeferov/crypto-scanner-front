@@ -6,7 +6,11 @@ import {
   EXTRA_TIMEFRAMES,
   hasMinimumKlineData, hasPartialKlineData, type Ticker24h, type Kline,
 } from '../services/binanceApi';
-import { getAllMarkets, getCryptoMarkets, toTickerFormat, type NormalizedAsset } from '../services/marketApi';
+import {
+  getAllMarkets, getCryptoMarkets, toTickerFormat,
+  tickerToNormalized, mergeAssets, expandStockMarkets, expandForexMarkets,
+  type NormalizedAsset,
+} from '../services/marketApi';
 import {
   createAssetFromNormalized, sortByPopularity, matchesSearch,
   hasIndicatorSupport, isCryptoAsset,
@@ -16,7 +20,11 @@ import { assetMatchesCategory } from '../types/asset';
 import { readKlineCache, writeKlineCache } from '../services/klineCache';
 import { streamKlinesFromServer, batchKlinesFromServer, toKlineAssetRef } from '../services/klineBatchApi';
 import { BinanceWebSocket, type TickerUpdate } from '../websocket/BinanceWebSocket';
-import { getLatestRSI } from '../indicators/rsi';
+import { calculateRSI } from '../indicators/rsi';
+import {
+  rsiLatchFromValues, rsiDirToSignal, EMPTY_RSI_LATCH_MAP,
+  type RsiLatchMap, type RsiLatchState,
+} from '../indicators/rsiState';
 import { getLatestMACD } from '../indicators/macd';
 import { getLatestATR } from '../indicators/atr';
 import { getLatestStochRSI } from '../indicators/stochRsi';
@@ -35,7 +43,7 @@ import { computeBuyRatios, analyzeVolumeForSignal } from '../indicators/volumeCo
 import { analyzeRsi } from '../indicators/rsiAnalysis';
 import { computeMarketSentiment } from '../indicators/marketSentiment';
 import { computeConfidenceScore } from '../indicators/confidenceScore';
-import { RSI_STRONG_OS, RSI_STRONG_OB } from '../indicators/signalConfig';
+import { RSI_PERIOD, RSI_STRONG_OS, RSI_STRONG_OB } from '../indicators/signalConfig';
 
 import type { AssetType } from '../types/asset';
 
@@ -180,6 +188,18 @@ export interface CoinData {
   rsiBias: 'bullish' | 'bearish' | 'neutral' | 'blocked';
   rsiQuality: number;
   rsiRegime: 'uptrend' | 'downtrend' | 'range';
+  /**
+   * RSI latch — TF üzrə qüvvədə olan siqnal. RSI oversold xəttini kəsdikdə
+   * BUY, overbought xəttini kəsdikdə SELL olur və ƏKS xətt kəsilənə qədər
+   * dəyişmir (MACD histoqramı ilə eyni davranış).
+   */
+  rsiLatch: RsiLatchMap;
+  /** Aktiv indikator TF-də qüvvədə olan RSI siqnalı */
+  rsiSignal: 'BUY' | 'SELL' | 'NEUTRAL';
+  /** Həmin siqnalın yaşı — son flip-dən bəri şam sayı */
+  rsiSignalCandles: number;
+  /** Siqnalı doğuran şamdakı RSI dəyəri */
+  rsiTriggerValue: number | null;
   /** Sentiment */
   sentimentScore: number;
   sentimentLabel: string;
@@ -236,15 +256,63 @@ interface MarketContextType {
 
 const MarketContext = createContext<MarketContextType | null>(null);
 
+/**
+ * Cədvəldə göstərilən kripto cütlərinin sayı.
+ *
+ * VITE_CRYPTO_LIMIT ilə override oluna bilər — çox yüksək dəyər ilk yüklənməni
+ * uzadır (hər aktiv üçün 7 timeframe kline çəkilir), ona görə 100 ilə məhdud.
+ */
+const CRYPTO_ASSET_LIMIT = (() => {
+  const raw = Number(import.meta.env.VITE_CRYPTO_LIMIT);
+  if (!Number.isFinite(raw) || raw <= 0) return 40;
+  return Math.min(Math.round(raw), 100);
+})();
+
+/** Backend siyahısı qısa olduqda Binance-dən çəkilən namizəd hovuzu */
+const BINANCE_POOL_LIMIT = 150;
+
+/**
+ * Kripto namizəd hovuzunu genişləndirir: backend siyahısı + Binance-in ən
+ * likvid USDT cütləri. Binance sorğusu uğursuz olsa (ban, offline) mövcud
+ * siyahı olduğu kimi qalır.
+ */
+async function expandCryptoPool(base: NormalizedAsset[]): Promise<NormalizedAsset[]> {
+  if (base.length >= CRYPTO_ASSET_LIMIT * 2) return base;
+  try {
+    const tickers = await getTopUSDTPairs(BINANCE_POOL_LIMIT);
+    return mergeAssets(base, tickers.map(tickerToNormalized));
+  } catch {
+    return base;
+  }
+}
+
+/**
+ * Peg olunmuş aktivlər — skanerdə yer tutmamalıdır.
+ *
+ * Qiyməti sabit saxlanan token (dollar/euro stablecoin) və ya əmtiaya bağlı
+ * token (XAUT, PAXG) üzərində RSI/MACD mənasızdır: qiymət praktiki dəyişmir,
+ * indikatorlar yalnız səs yaradır. Qızıl onsuz da emtia kateqoriyasındadır.
+ *
+ * Şablon `USD`/`EUR` ilə başlayan və ya bitən simvolları tutur — USD1, USDE,
+ * RLUSD, BFUSD, XUSD, EURI kimi. Belə adlandırma praktiki olaraq yalnız
+ * stablecoin-lərdə olur.
+ */
+const PEGGED_SYMBOL = /^(?:USD|EUR)|(?:USD|EUR)$/;
+const PEGGED_EXTRA = new Set(['XAUT', 'PAXG', 'XAU', 'WBTC', 'WBETH', 'BUSD', 'DAI', 'TUSD']);
+
+function isPeggedAsset(base: string): boolean {
+  return PEGGED_SYMBOL.test(base) || PEGGED_EXTRA.has(base);
+}
+
 /** Top N keyfiyyətli crypto: volume + marketCap, BTC/ETH həmişə */
-function selectQualityCrypto(assets: NormalizedAsset[], limit = 15): NormalizedAsset[] {
+function selectQualityCrypto(assets: NormalizedAsset[], limit = CRYPTO_ASSET_LIMIT): NormalizedAsset[] {
   const anchors = ['BTC', 'ETH'];
   const bySym = new Map(assets.map(a => [a.symbol.replace(/USDT$/i, '').toUpperCase(), a]));
 
   const scored = assets
     .filter(a => {
       const base = a.symbol.replace(/USDT$/i, '').toUpperCase();
-      if (['USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'FDUSD'].includes(base)) return false;
+      if (isPeggedAsset(base)) return false;
       return (a.volume24h ?? 0) > 0;
     })
     .map(a => {
@@ -320,12 +388,29 @@ function computeIndicators(
 
   const indicatorCloses = indicatorK.map(k => k.close);
 
-  const rsi1m  = getLatestRSI(k1m.map(k => k.close), 14);
-  const rsi5m  = getLatestRSI(k5m.map(k => k.close), 14);
-  const rsi15m = getLatestRSI(k15m.map(k => k.close), 14);
-  const rsi1h  = getLatestRSI(k1h.map(k => k.close),  14);
-  const rsi4h  = getLatestRSI(k4h.map(k => k.close),  14);
-  const rsi1d  = getLatestRSI(k1d.map(k => k.close),  14);
+  // Hər TF üçün RSI dəyəri + latch vəziyyəti bir hesablamadan çıxarılır
+  const rsiOf = (ks: Kline[]): RsiLatchState =>
+    rsiLatchFromValues(calculateRSI(ks.map(k => k.close), RSI_PERIOD));
+
+  const rsiState: Record<RsiTf, RsiLatchState> = {
+    '1m': rsiOf(k1m), '5m': rsiOf(k5m), '15m': rsiOf(k15m),
+    '1h': rsiOf(k1h), '4h': rsiOf(k4h), '1d': rsiOf(k1d),
+  };
+
+  const rsi1m  = rsiState['1m'].rsi;
+  const rsi5m  = rsiState['5m'].rsi;
+  const rsi15m = rsiState['15m'].rsi;
+  const rsi1h  = rsiState['1h'].rsi;
+  const rsi4h  = rsiState['4h'].rsi;
+  const rsi1d  = rsiState['1d'].rsi;
+
+  const rsiLatch: RsiLatchMap = {
+    '1m': rsiState['1m'].dir, '5m': rsiState['5m'].dir, '15m': rsiState['15m'].dir,
+    '1h': rsiState['1h'].dir, '4h': rsiState['4h'].dir, '1d': rsiState['1d'].dir,
+  };
+
+  // Cədvəldə göstərilən RSI siqnalı — seçilmiş indikator TF-i üzrə latch
+  const activeLatch = rsiState[indicatorTf];
 
   const macdResult    = indicatorCloses.length >= 35 ? getLatestMACD(indicatorCloses) : null;
   const macd          = macdResult?.macd      ?? null;
@@ -351,14 +436,13 @@ function computeIndicators(
     atrPercent,
   });
 
-  const rsiByTf: Record<RsiTf, number | null> = {
-    '1m': rsi1m, '5m': rsi5m, '15m': rsi15m, '1h': rsi1h, '4h': rsi4h, '1d': rsi1d,
-  };
-  const activeRsi = rsiByTf[indicatorTf];
+  const activeRsi = activeLatch.rsi;
 
   const rsiSide =
     activeRsi !== null && activeRsi < RSI_STRONG_OS ? 'buy' as const
     : activeRsi !== null && activeRsi > RSI_STRONG_OB ? 'sell' as const
+    : activeLatch.dir === 1 ? 'buy' as const
+    : activeLatch.dir === -1 ? 'sell' as const
     : rsiAnalysis.bias === 'bullish' ? 'buy' as const
     : rsiAnalysis.bias === 'bearish' ? 'sell' as const
     : null;
@@ -390,6 +474,7 @@ function computeIndicators(
     haConsecutive: haResult.consecutive,
     haSignal: haResult.signal,
     rsiAnalysis,
+    rsiLatch,
     volumeGate: volAnalysis.gate,
   });
 
@@ -457,6 +542,10 @@ function computeIndicators(
     rsiBias: rsiAnalysis.bias,
     rsiQuality: rsiAnalysis.quality,
     rsiRegime: rsiAnalysis.regime,
+    rsiLatch,
+    rsiSignal: rsiDirToSignal(activeLatch.dir),
+    rsiSignalCandles: activeLatch.candles,
+    rsiTriggerValue: activeLatch.triggerRsi,
     sentimentScore: 0,
     sentimentLabel: 'Neytral',
     confidence: 0,
@@ -505,6 +594,10 @@ function buildEmptyCoinFields(): Omit<CoinData, keyof ReturnType<typeof createAs
     rsiBias: 'neutral',
     rsiQuality: 0,
     rsiRegime: 'range',
+    rsiLatch: { ...EMPTY_RSI_LATCH_MAP },
+    rsiSignal: 'NEUTRAL',
+    rsiSignalCandles: 0,
+    rsiTriggerValue: null,
     sentimentScore: 0,
     sentimentLabel: 'Neytral',
     confidence: 0,
@@ -634,15 +727,29 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     syncAssetKlinesBatch(new Map([[assetId, patch]]));
   }, [syncAssetKlinesBatch]);
 
+  /**
+   * Non-crypto aktivlərdə WebSocket yoxdur, ona görə klines dövri olaraq
+   * yenilənir. Uzun TF-lər hər dəqiqə yenilənməyə ehtiyac duymur (4H şamı
+   * 60 saniyədə praktiki dəyişmir), ona görə onlar hər 5-ci dövrədə çəkilir —
+   * 60+ non-crypto aktivdə bu Yahoo-ya düşən seriya sayını ~30% azaldır.
+   */
+  const refreshTickRef = useRef(0);
+
   const refreshNonCryptoKlines = useCallback(async () => {
     const targets = coinsRef.current.filter(c => c.type !== 'crypto' && hasIndicatorSupport(c));
     if (!targets.length) return;
+
+    const tick = refreshTickRef.current++;
+    const intervals = tick % 5 === 0
+      ? ['1m', '5m', '15m', '1h', '4h']
+      : ['1m', '5m', '15m'];
+
     try {
-      const map = await batchKlinesFromServer(
-        targets.map(toKlineAssetRef),
-        ['1m', '5m', '15m', '1h', '4h'],
-        true,
-      );
+      // refresh=false qəsdən: server per-timeframe TTL keşi saxlayır (1m ≈ 1 dəq),
+      // yəni məlumat bu poll üçün onsuz da kifayət qədər təzədir. refresh=true
+      // keşi tam bypass edir — cavab 4s yerinə 11s çəkir və hər dəqiqə Yahoo-ya
+      // 300+ real sorğu göndərir, bu da rate-limit riskidir.
+      const map = await batchKlinesFromServer(targets.map(toKlineAssetRef), intervals, false);
       syncAssetKlinesBatch(map);
     } catch {
       /* ignore background refresh errors */
@@ -661,7 +768,7 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
       const map = await batchKlinesFromServer(
         targets.map(toKlineAssetRef),
         [tf],
-        true,
+        false,
       );
       map.forEach((klines, id) => {
         const merged = { ...(klineCacheRef.current.get(id) ?? {}), ...klines };
@@ -792,11 +899,19 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
           ...allMarkets.commodities,
         ];
         if (merged.length > 0) {
-          const cryptoTop = selectQualityCrypto(allMarkets.crypto, 15);
+          // Kripto hovuzu Binance top cütləri ilə, hissələr açıq ticker
+          // siyahısı ilə genişləndirilir — hər ikisi uğursuzluqda təhlükəsiz
+          // şəkildə mövcud backend siyahısına qayıdır.
+          const [cryptoPool, stocks, forex] = await Promise.all([
+            expandCryptoPool(allMarkets.crypto),
+            expandStockMarkets(allMarkets.stocks),
+            expandForexMarkets(allMarkets.forex),
+          ]);
+          const cryptoTop = selectQualityCrypto(cryptoPool, CRYPTO_ASSET_LIMIT);
           const combined = [
             ...cryptoTop,
-            ...allMarkets.stocks,
-            ...allMarkets.forex,
+            ...stocks,
+            ...forex,
             ...allMarkets.commodities,
           ];
           initialCoins = sortByPopularity(
@@ -816,11 +931,11 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
               marketRes.data.map(a => ({ ...createAssetFromNormalized(a), ...buildEmptyCoinFields() })),
             );
           } else {
-            const tickers = await getTopUSDTPairs(50);
+            const tickers = await getTopUSDTPairs(CRYPTO_ASSET_LIMIT);
             initialCoins = tickers.map(buildCoinFromTicker);
           }
         } catch {
-          const tickers = await getTopUSDTPairs(50);
+          const tickers = await getTopUSDTPairs(CRYPTO_ASSET_LIMIT);
           initialCoins = tickers.map(buildCoinFromTicker);
         }
       }
