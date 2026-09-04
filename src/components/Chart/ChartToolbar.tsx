@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   CandlestickChart, LineChart, AreaChart, ChevronDown,
-  SlidersHorizontal, Camera, Maximize2, Check, Settings2, Zap, EyeOff,
+  SlidersHorizontal, Camera, Maximize2, Check, Settings2, Zap, Eye, EyeOff,
 } from 'lucide-react';
 import { STUDIES, STUDY_GROUP_LABELS } from '../../indicators/library/studies';
 import type { StudyGroup } from '../../indicators/library/types';
@@ -24,7 +24,7 @@ interface ChartToolbarProps {
   onUpdateSettings: (partial: Partial<IndicatorSettings>) => void;
   onToggleStudy: (key: string) => void;
   onUpdateStudyParam: (key: string, param: string, value: number) => void;
-  onClearAllIndicators: () => void;
+  onSetAllIndicators: (on: boolean) => void;
   /** Aktivdə real həcm varmı — yoxdursa həcm indikatorları bağlanır */
   hasVolume: boolean;
   logScale: boolean;
@@ -226,7 +226,7 @@ function SignalSectionLabel({ children, color }: { children: React.ReactNode; co
 
 export function ChartToolbar({
   timeframe, onTimeframeChange, settings, onToggleIndicator, onUpdateSettings,
-  onToggleStudy, onUpdateStudyParam, onClearAllIndicators, hasVolume,
+  onToggleStudy, onUpdateStudyParam, onSetAllIndicators, hasVolume,
   logScale, onToggleLogScale, onScreenshot, onFullscreen,
 }: ChartToolbarProps) {
   const [typeOpen, setTypeOpen] = useState(false);
@@ -252,6 +252,9 @@ export function ChartToolbar({
   const enabledStudies = STUDIES.filter(d => settings.studies[d.key]?.enabled).length;
   const enabledCount =
     INDICATOR_ROWS.filter(r => settings[r.key].enabled).length + enabledStudies;
+  // "Hamısı" düymələri üçün: mövcud olan bütün indikatorlar (rows + studies)
+  const totalIndicators = INDICATOR_ROWS.length + STUDIES.length;
+  const allEnabled = enabledCount >= totalIndicators;
 
   const signalCount = {
     buy: SIGNAL_INDICATORS.filter(i => settings.signals.buy[i.key]).length,
@@ -324,6 +327,30 @@ export function ChartToolbar({
         </ToolButton>
         {indOpen && (
           <MenuSurface width={290} maxHeight={460}>
+            {/* Kütləvi aç/bağla — bütün indikatorları bir kliklə */}
+            <div className="flex items-center gap-1.5 px-3 pb-1.5 pt-0.5">
+              <button
+                type="button"
+                onClick={() => onSetAllIndicators(true)}
+                disabled={allEnabled}
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
+              >
+                <Eye size={13} />
+                Hamısını aç
+              </button>
+              <button
+                type="button"
+                onClick={() => onSetAllIndicators(false)}
+                disabled={enabledCount === 0}
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'var(--chart-surface)', color: 'var(--chart-text-bright)' }}
+              >
+                <EyeOff size={13} />
+                Hamısını bağla
+              </button>
+            </div>
+            <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
             {INDICATOR_ROWS.map(row => {
               const enabled = settings[row.key].enabled;
               const isExpanded = expanded === row.key;
@@ -466,20 +493,6 @@ export function ChartToolbar({
                 analysis: { ...settings.analysis, patterns: !settings.analysis.patterns },
               })}
             />
-
-            {enabledCount > 0 && (
-              <>
-                <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left row-hover"
-                  onClick={onClearAllIndicators}
-                >
-                  <EyeOff size={14} style={{ color: 'var(--chart-text-dim)' }} />
-                  <span style={{ color: 'var(--chart-text-bright)' }}>Hamısını söndür</span>
-                </button>
-              </>
-            )}
           </MenuSurface>
         )}
       </div>

@@ -26,7 +26,7 @@ export function TradingChart({
   const {
     containerRef,
     timeframe, setTimeframe, settings, toggleIndicator, togglePanel, updateSettings,
-    toggleStudy, updateStudyParam, clearAllIndicators, hasVolume,
+    toggleStudy, updateStudyParam, setAllIndicators, hasVolume,
     loading, error,
     legend, stInfo, zones, patterns, logScale, setLogScale, takeScreenshot,
     chartRef, mainSeriesRef, klinesRef, stDataRef,
@@ -77,7 +77,7 @@ export function TradingChart({
         onUpdateSettings={updateSettings}
         onToggleStudy={toggleStudy}
         onUpdateStudyParam={updateStudyParam}
-        onClearAllIndicators={clearAllIndicators}
+        onSetAllIndicators={setAllIndicators}
         hasVolume={hasVolume}
         logScale={logScale}
         onToggleLogScale={() => setLogScale(v => !v)}

@@ -674,18 +674,25 @@ export function useTradingChart(
     });
   }, []);
 
-  /** Bütün indikatorları söndür — "təmiz qrafik" düyməsi */
-  const clearAllIndicators = useCallback(() => {
+  /**
+   * Bütün indikatorları eyni anda aç / bağla — Indicators menyusundakı
+   * "hamısı" düymələri. Əhatə: volume + SuperTrend + RSI + MACD + Stoch,
+   * bütün kitabxana indikatorları və S/D zona + formasiya analizi.
+   *
+   * Siqnal mühərrikinə (Signals menyusu) TOXUNMUR — o ayrı bölmədir və
+   * kütləvi açılış istənilməz marker seli yarada bilər.
+   */
+  const setAllIndicators = useCallback((on: boolean) => {
     setSettings(prev => ({
       ...prev,
-      rsi: { ...prev.rsi, enabled: false },
-      macd: { ...prev.macd, enabled: false },
-      stochRsi: { ...prev.stochRsi, enabled: false },
-      superTrend: { ...prev.superTrend, enabled: false },
-      signals: { ...prev.signals, enabled: false },
-      analysis: { supplyZones: false, demandZones: false, patterns: false },
+      volume: { ...prev.volume, enabled: on },
+      rsi: { ...prev.rsi, enabled: on },
+      macd: { ...prev.macd, enabled: on },
+      stochRsi: { ...prev.stochRsi, enabled: on },
+      superTrend: { ...prev.superTrend, enabled: on },
+      analysis: { supplyZones: on, demandZones: on, patterns: on },
       studies: Object.fromEntries(
-        Object.entries(prev.studies).map(([k, v]) => [k, { ...v, enabled: false }]),
+        Object.entries(prev.studies).map(([k, v]) => [k, { ...v, enabled: on }]),
       ),
     }));
   }, []);
@@ -705,7 +712,7 @@ export function useTradingChart(
     updateSettings,
     toggleStudy,
     updateStudyParam,
-    clearAllIndicators,
+    setAllIndicators,
     loading,
     error,
     legend,
