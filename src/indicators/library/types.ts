@@ -10,6 +10,7 @@
 import type { UTCTimestamp } from 'lightweight-charts';
 import type { Kline } from '../../services/binanceApi';
 import type { ChartThemeColors } from '../../types/chart';
+import type { SignalDir } from '../signalLatch';
 
 export type StudyPlacement = 'overlay' | 'pane';
 export type StudyGroup = 'trend' | 'volatility' | 'momentum' | 'volume';
@@ -66,6 +67,25 @@ export interface StudyDef {
   needsVolume?: boolean;
   params: StudyParam[];
   compute(klines: Kline[], p: Record<string, number>, theme: ChartThemeColors): StudyPlot[];
+
+  /**
+   * Siqnal mühərriki üçün TRIGGER istiqaməti — hər şam üçün 1 (AL), -1 (SAT)
+   * və ya 0 (trigger yoxdur). Nəticə klines ilə EYNİ uzunluqda olmalıdır.
+   *
+   * Sonra latchDirs() bunu davamlı vəziyyətə çevirir: verilən siqnal əks
+   * trigger gələnə qədər qüvvədə qalır (layihənin ümumi siqnal siyasəti).
+   *
+   * QAYDA: i-ci şamın dəyəri YALNIZ 0..i şamlarından hesablanmalıdır.
+   * Gələcəyə baxan hər hansı istinad siqnalı repaint edər — bu, scratch
+   * yoxlamasında prefiks-sabitlik testi ilə yoxlanılır.
+   *
+   * undefined = indikatorun istiqaməti yoxdur və siqnal mühərrikində iştirak
+   * etmir (məsələn ATR — sırf volatillik ölçüsüdür).
+   */
+  signal?: (klines: Kline[], p: Record<string, number>) => SignalDir[];
+
+  /** Siqnal qaydasının qısa izahı — UI tooltip-i üçün */
+  signalNote?: string;
 }
 
 export interface StudyState {

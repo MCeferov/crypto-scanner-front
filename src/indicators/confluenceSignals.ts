@@ -1,6 +1,6 @@
 import type { SeriesMarker, UTCTimestamp } from 'lightweight-charts';
 import type { Kline } from '../services/binanceApi';
-import type { IndicatorSettings, SignalIndicatorKey } from '../types/chart';
+import type { IndicatorSettings, SignalIndicatorKey, SignalParticipation } from '../types/chart';
 import { calculateRSI } from './rsi';
 import { calculateMACD } from './macd';
 import { calculateStochRSI } from './stochRsi';
@@ -8,6 +8,7 @@ import { calculateSuperTrend } from './supertrend';
 import { toHeikinAshi } from './heikinAshi';
 import { latchDirs, type SignalDir } from './signalLatch';
 import { rsiTriggerDirs } from './rsiState';
+import { STUDY_BY_KEY, computeStudySignal } from './library/studies';
 
 const BUY_COLOR = '#26a69a';
 const SELL_COLOR = '#ef5350';
@@ -65,7 +66,8 @@ function heikinAshiDirs(klines: Kline[]): SignalDir[] {
   return ha.map(c => (c.close > c.open ? 1 : c.close < c.open ? -1 : 0));
 }
 
-const DIR_BUILDERS: Record<SignalIndicatorKey, (klines: Kline[], s: IndicatorSettings) => SignalDir[]> = {
+/** Qrafikə quraşdırılmış beşlik — parametrləri IndicatorSettings-dən gəlir */
+const BUILTIN_DIR_BUILDERS: Record<string, (klines: Kline[], s: IndicatorSettings) => SignalDir[]> = {
   rsi: rsiDirs,
   stochRsi: stochRsiDirs,
   macd: macdDirs,
@@ -73,8 +75,46 @@ const DIR_BUILDERS: Record<SignalIndicatorKey, (klines: Kline[], s: IndicatorSet
   heikinAshi: (klines) => heikinAshiDirs(klines),
 };
 
-function activeKeys(participation: Record<SignalIndicatorKey, boolean>): SignalIndicatorKey[] {
-  return (Object.keys(participation) as SignalIndicatorKey[]).filter(k => participation[k]);
+/**
+ * Bir iştirakçının trigger massivini qurur.
+ *
+ * Əvvəlcə quraşdırılmış beşliyə baxılır, sonra kitabxana registrinə. Registr
+ * indikatoru öz signal() qaydasını özü elan edir və eyni calc*() nəticəsindən
+ * qidalanır ki, qrafikdə görünən rəqəmlə siqnalın rəqəmi ayrılmasın.
+ *
+ * DİQQƏT: iştirak indikatorun qrafikdə GÖRÜNMƏSİNDƏN asılı deyil — MACD-ni
+ * panel açmadan da siqnala qata bilərsən (mövcud davranış belədir).
+ */
+function buildDirs(key: string, klines: Kline[], s: IndicatorSettings): SignalDir[] | null {
+  const builtin = BUILTIN_DIR_BUILDERS[key];
+  if (builtin) return builtin(klines, s);
+
+  const def = STUDY_BY_KEY[key];
+  if (!def?.signal) return null;
+  return computeStudySignal(def, klines, s.studies?.[key]?.params ?? {});
+}
+
+/** Kline-larda real həcm varmı — Yahoo forex-də həmişə 0 olur */
+function hasRealVolume(klines: Kline[]): boolean {
+  return klines.some(k => (k.volume ?? 0) > 0);
+}
+
+/** Açar tanınırmı — köhnə yaddaşda qalmış naməlum açar mühərriki sındırmasın */
+function isKnownKey(key: string): boolean {
+  return BUILTIN_DIR_BUILDERS[key] !== undefined || typeof STUDY_BY_KEY[key]?.signal === 'function';
+}
+
+function activeKeys(
+  participation: SignalParticipation,
+  volumeOk: boolean,
+): SignalIndicatorKey[] {
+  return Object.keys(participation).filter(key => {
+    if (!participation[key] || !isKnownKey(key)) return false;
+    // Həcm tələb edən indikator həcmsiz aktivdə heç vaxt trigger verə bilməz
+    // və AND şərtini əbədi bloklayardı — belə halda iştirakçı sayılmır.
+    if (STUDY_BY_KEY[key]?.needsVolume && !volumeOk) return false;
+    return true;
+  });
 }
 
 /**
@@ -98,8 +138,9 @@ export function computeConfluenceMarkers(
   const cfg = settings.signals;
   if (!cfg?.enabled || klines.length === 0) return [];
 
-  const buyKeys = activeKeys(cfg.buy);
-  const sellKeys = activeKeys(cfg.sell);
+  const volumeOk = hasRealVolume(klines);
+  const buyKeys = activeKeys(cfg.buy, volumeOk);
+  const sellKeys = activeKeys(cfg.sell, volumeOk);
   if (buyKeys.length === 0 && sellKeys.length === 0) return [];
 
   // Yalnız iştirak edən indikatorlar hesablanır.
@@ -107,13 +148,14 @@ export function computeConfluenceMarkers(
   // əks trigger gələnə qədər qüvvədə qalır.
   const dirs = new Map<SignalIndicatorKey, SignalDir[]>();
   for (const key of new Set([...buyKeys, ...sellKeys])) {
-    dirs.set(key, latchDirs(DIR_BUILDERS[key](klines, settings)));
+    const built = buildDirs(key, klines, settings);
+    if (built) dirs.set(key, latchDirs(built));
   }
 
   const buyAt = (i: number) =>
-    buyKeys.length > 0 && buyKeys.every(k => dirs.get(k)![i] === 1);
+    buyKeys.length > 0 && buyKeys.every(k => dirs.get(k)?.[i] === 1);
   const sellAt = (i: number) =>
-    sellKeys.length > 0 && sellKeys.every(k => dirs.get(k)![i] === -1);
+    sellKeys.length > 0 && sellKeys.every(k => dirs.get(k)?.[i] === -1);
 
   const markers: SeriesMarker<UTCTimestamp>[] = [];
 

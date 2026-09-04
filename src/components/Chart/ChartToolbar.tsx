@@ -188,15 +188,18 @@ const INDICATOR_ROWS: IndicatorRowDef[] = [
 ];
 
 function SignalCheckRow({
-  checked, label, onToggle, dim,
+  checked, label, onToggle, dim, title, disabled,
 }: {
-  checked: boolean; label: string; onToggle: () => void; dim?: boolean;
+  checked: boolean; label: string; onToggle: () => void;
+  dim?: boolean; title?: string; disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left row-hover"
       style={{ opacity: dim ? 0.45 : 1 }}
+      title={title}
+      disabled={disabled}
       onClick={onToggle}
     >
       <span
@@ -249,6 +252,11 @@ export function ChartToolbar({
   const enabledStudies = STUDIES.filter(d => settings.studies[d.key]?.enabled).length;
   const enabledCount =
     INDICATOR_ROWS.filter(r => settings[r.key].enabled).length + enabledStudies;
+
+  const signalCount = {
+    buy: SIGNAL_INDICATORS.filter(i => settings.signals.buy[i.key]).length,
+    sell: SIGNAL_INDICATORS.filter(i => settings.signals.sell[i.key]).length,
+  };
 
   const studyGroups = (['trend', 'volatility', 'momentum', 'volume'] as StudyGroup[])
     .map(group => ({ group, items: STUDIES.filter(d => d.group === group) }))
@@ -483,7 +491,7 @@ export function ChartToolbar({
           <span className="hidden sm:inline">Signals</span>
         </ToolButton>
         {sigOpen && (
-          <MenuSurface width={230}>
+          <MenuSurface width={280} maxHeight={460}>
             <SignalCheckRow
               checked={settings.signals.enabled}
               label="Signal Engine"
@@ -491,27 +499,41 @@ export function ChartToolbar({
                 signals: { ...settings.signals, enabled: !settings.signals.enabled },
               })}
             />
-            <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
-            <SignalSectionLabel color="#26a69a">BUY SIGNAL</SignalSectionLabel>
-            {SIGNAL_INDICATORS.map(ind => (
-              <SignalCheckRow
-                key={`buy-${ind.key}`}
-                checked={settings.signals.buy[ind.key]}
-                label={ind.label}
-                dim={!settings.signals.enabled}
-                onToggle={() => toggleSignal('buy', ind.key)}
-              />
-            ))}
-            <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
-            <SignalSectionLabel color="#ef5350">SELL SIGNAL</SignalSectionLabel>
-            {SIGNAL_INDICATORS.map(ind => (
-              <SignalCheckRow
-                key={`sell-${ind.key}`}
-                checked={settings.signals.sell[ind.key]}
-                label={ind.label}
-                dim={!settings.signals.enabled}
-                onToggle={() => toggleSignal('sell', ind.key)}
-              />
+            <div
+              className="px-3 py-1.5 text-[10px] leading-snug"
+              style={{ color: 'var(--chart-text-dim)' }}
+            >
+              Marker seçilmiş indikatorların <b>HAMISI</b> eyni istiqaməti göstərdiyi
+              anda qoyulur. Şərt siqnalda keçirilən vaxtı azaldır, amma tez-tez
+              çevrilən indikator (VWAP, Bollinger) əlavə edəndə marker <b>sayı</b>
+              arta bilər — konyunksiya hər çevrilmədə yenidən yanır.
+            </div>
+
+            {(['buy', 'sell'] as const).map(side => (
+              <div key={side}>
+                <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
+                <SignalSectionLabel color={side === 'buy' ? '#26a69a' : '#ef5350'}>
+                  {side === 'buy' ? 'BUY SIGNAL' : 'SELL SIGNAL'}
+                  {' · '}
+                  {signalCount[side]} seçili
+                </SignalSectionLabel>
+                {SIGNAL_INDICATORS.map(ind => {
+                  const blocked = ind.needsVolume === true && !hasVolume;
+                  return (
+                    <SignalCheckRow
+                      key={`${side}-${ind.key}`}
+                      checked={Boolean(settings.signals[side][ind.key]) && !blocked}
+                      label={blocked ? `${ind.label} — həcm yoxdur` : ind.label}
+                      title={blocked
+                        ? 'Bu aktivdə həcm məlumatı yoxdur, indikator siqnala qatılmır'
+                        : ind.note}
+                      dim={!settings.signals.enabled || blocked}
+                      disabled={blocked}
+                      onToggle={() => toggleSignal(side, ind.key)}
+                    />
+                  );
+                })}
+              </div>
             ))}
           </MenuSurface>
         )}

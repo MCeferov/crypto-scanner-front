@@ -36,9 +36,13 @@ const apiProxyTarget =
   process.env.API_PROXY_TARGET ??
   "https://crypto-scanner-back-production.up.railway.app";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   base: basePath,
   plugins: [react(), tailwindcss()],
+  // Production build only: strip console.* and debugger from the bundle so
+  // operational hints (asset counts, API error objects, "restart the API"
+  // notes) never reach a hostile client's DevTools. Dev keeps them.
+  esbuild: command === "build" ? { drop: ["console", "debugger"] } : {},
   resolve: {
     alias: {
       "@": path.resolve(configDir, "src"),
@@ -49,6 +53,10 @@ export default defineConfig({
   build: {
     outDir: path.resolve(configDir, "dist"),
     emptyOutDir: true,
+    // No public source maps: they would republish readable source and the
+    // original file layout to anyone. Not a "secret" (the logic is inferable
+    // from the bundle regardless), but there is no reason to hand it over.
+    sourcemap: false,
   },
   server: {
     port,
@@ -89,4 +97,4 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
   },
-});
+}));

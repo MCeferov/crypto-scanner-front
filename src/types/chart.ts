@@ -1,5 +1,5 @@
 import type { AssetType } from './asset';
-import { defaultStudySettings } from '../indicators/library/studies';
+import { SIGNAL_STUDIES, defaultStudySettings } from '../indicators/library/studies';
 import type { StudySettings } from '../indicators/library/types';
 
 export type ChartTimeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
@@ -28,18 +28,53 @@ export type IndicatorKey =
   | 'macd'
   | 'stochRsi';
 
-/** Confluence signal engine-də iştirak edə bilən indikatorlar */
-export type SignalIndicatorKey = 'rsi' | 'stochRsi' | 'macd' | 'superTrend' | 'heikinAshi';
+/** Qrafikə quraşdırılmış (registrdən kənar) siqnal indikatorları */
+export type BuiltinSignalKey = 'rsi' | 'stochRsi' | 'macd' | 'superTrend' | 'heikinAshi';
 
-export const SIGNAL_INDICATORS: { key: SignalIndicatorKey; label: string }[] = [
-  { key: 'rsi', label: 'RSI' },
-  { key: 'stochRsi', label: 'Stochastic RSI' },
-  { key: 'macd', label: 'MACD' },
-  { key: 'superTrend', label: 'Supertrend' },
-  { key: 'heikinAshi', label: 'Heikin Ashi' },
+/**
+ * Confluence engine-də iştirak edə bilən indikatorun açarı: ya quraşdırılmış
+ * beşlikdən biri, ya da kitabxana registrindən signal() elan edən indikator.
+ */
+export type SignalIndicatorKey = string;
+
+export interface SignalIndicatorDef {
+  key: SignalIndicatorKey;
+  label: string;
+  /** Siqnal qaydasının izahı — UI tooltip-i */
+  note?: string;
+  /** Həcm tələb edir — həcmi olmayan aktivdə (forex) iştirak etmir */
+  needsVolume?: boolean;
+  /** Quraşdırılmış beşlik / kitabxana indikatoru */
+  builtin: boolean;
+}
+
+const BUILTIN_SIGNAL_INDICATORS: SignalIndicatorDef[] = [
+  { key: 'rsi', label: 'RSI', note: 'RSI oversold xəttinin altında = AL, overbought xəttinin üstündə = SAT', builtin: true },
+  { key: 'stochRsi', label: 'Stochastic RSI', note: '%K oversold-un altında = AL, overbought-un üstündə = SAT', builtin: true },
+  { key: 'macd', label: 'MACD', note: 'Histoqram müsbət = AL, mənfi = SAT', builtin: true },
+  { key: 'superTrend', label: 'Supertrend', note: 'Supertrend bullish = AL, bearish = SAT', builtin: true },
+  { key: 'heikinAshi', label: 'Heikin Ashi', note: 'HA şamı yaşıl = AL, qırmızı = SAT', builtin: true },
 ];
 
-export type SignalParticipation = Record<SignalIndicatorKey, boolean>;
+/**
+ * Siqnal siyahısı: quraşdırılmış beşlik + kitabxananın istiqamət verə bilən
+ * indikatorları. ATR kimi istiqaməti olmayanlar burada görünmür.
+ */
+export const SIGNAL_INDICATORS: SignalIndicatorDef[] = [
+  ...BUILTIN_SIGNAL_INDICATORS,
+  ...SIGNAL_STUDIES.map(d => ({
+    key: d.key,
+    label: d.label,
+    note: d.signalNote,
+    needsVolume: d.needsVolume,
+    builtin: false,
+  })),
+];
+
+export const SIGNAL_INDICATOR_BY_KEY: Record<string, SignalIndicatorDef> =
+  Object.fromEntries(SIGNAL_INDICATORS.map(d => [d.key, d]));
+
+export type SignalParticipation = Record<string, boolean>;
 
 /**
  * Data-driven confluence config: hansı indikatorlar BUY / SELL siqnalının
@@ -51,10 +86,23 @@ export interface SignalEngineConfig {
   sell: SignalParticipation;
 }
 
+/**
+ * Yalnız quraşdırılmış beşlik default olaraq iştirak edir.
+ *
+ * Mühərrik AND məntiqi ilə işləyir — iştirakçı nə qədər çoxdursa, siqnal bir
+ * o qədər nadir olur. Ona görə kitabxana indikatorları sönülü gəlir və
+ * istifadəçi lazım olanı özü əlavə edir.
+ */
+function participation(enabled: boolean): SignalParticipation {
+  return Object.fromEntries(
+    SIGNAL_INDICATORS.map(d => [d.key, enabled && d.builtin]),
+  );
+}
+
 export const DEFAULT_SIGNAL_CONFIG: SignalEngineConfig = {
   enabled: true,
-  buy: { rsi: true, stochRsi: true, macd: true, superTrend: true, heikinAshi: true },
-  sell: { rsi: true, stochRsi: true, macd: true, superTrend: true, heikinAshi: true },
+  buy: participation(true),
+  sell: participation(true),
 };
 
 export interface IndicatorSettings {
