@@ -21,13 +21,16 @@ import { getChartKlines, CHART_KLINE_LIMIT } from '../services/klineBatchApi';
 import { ChartKlineWebSocket } from '../services/chartWebSocket';
 import {
   CHART_TIMEFRAMES,
-  DEFAULT_INDICATOR_SETTINGS,
+  loadChartSettings,
+  saveChartSettings,
   getChartTheme,
   type ChartAsset,
   type ChartThemeColors,
   type ChartTimeframe,
   type IndicatorSettings,
 } from '../types/chart';
+import { STUDIES, computeStudy } from '../indicators/library/studies';
+import type { StudyPlot } from '../indicators/library/types';
 import { computeAllChartSeries, displayKlinesForCandles, klinesToCloseLine, toChartTime } from '../utils/chartSeries';
 import { computeConfluenceMarkers } from '../indicators/confluenceSignals';
 import { detectChartZones, type ChartZone } from '../indicators/chartZones';
@@ -88,6 +91,21 @@ function buildChartOptions(theme: ChartThemeColors) {
 
 const PANE_HEIGHTS = { main: 380, rsi: 100, macd: 100, stoch: 100 };
 
+const LINE_STYLE: Record<'solid' | 'dashed' | 'dotted', LineStyle> = {
+  solid: LineStyle.Solid,
+  dashed: LineStyle.Dashed,
+  dotted: LineStyle.Dotted,
+};
+
+/**
+ * Həcm əsaslı indikatorlar (VWAP, MFI, OBV) yalnız həcmi olan aktivlərdə
+ * mənalıdır. Yahoo forex kline-larında həcm həmişə 0-dır — belə halda
+ * indikator sadəcə düz xətt çəkərdi, ona görə ümumiyyətlə çəkilmir.
+ */
+function hasRealVolume(klines: Kline[]): boolean {
+  return klines.some(k => (k.volume ?? 0) > 0);
+}
+
 export function useTradingChart(
   asset: ChartAsset,
   initialTimeframe: ChartTimeframe = '1h',
@@ -116,13 +134,15 @@ export function useTradingChart(
   const signalMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
   const paneMapRef = useRef<{ rsi: number; macd: number; stoch: number }>({ rsi: -1, macd: -1, stoch: -1 });
+  /** Registr indikatorlarının seriyaları — hər yenidən çəkilişdə tam silinir */
+  const studySeriesRef = useRef<ISeriesApi<'Line' | 'Histogram'>[]>([]);
 
   const wsRef = useRef<ChartKlineWebSocket | null>(null);
   const klinesRef = useRef<Kline[]>([]);
-  const settingsRef = useRef<IndicatorSettings>(DEFAULT_INDICATOR_SETTINGS);
+  const settingsRef = useRef<IndicatorSettings>(loadChartSettings());
 
   const [timeframe, setTimeframe] = useState<ChartTimeframe>(initialTimeframe);
-  const [settings, setSettings] = useState<IndicatorSettings>(DEFAULT_INDICATOR_SETTINGS);
+  const [settings, setSettings] = useState<IndicatorSettings>(loadChartSettings);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [legend, setLegend] = useState<ChartLegend | null>(null);
@@ -133,6 +153,8 @@ export function useTradingChart(
   const [zones, setZones] = useState<ChartZone[]>([]);
   /** Təsdiqlənmiş qrafik formasiyaları */
   const [patterns, setPatterns] = useState<ChartPattern[]>([]);
+  /** Aktivin kline-larında real həcm varmı — forex-də olmur */
+  const [hasVolume, setHasVolume] = useState(true);
   const hoveringRef = useRef(false);
 
   settingsRef.current = settings;
@@ -165,6 +187,54 @@ export function useTradingChart(
       try { chart.removePane(chart.panes().length - 1); } catch { break; }
     }
     paneMapRef.current = { rsi: -1, macd: -1, stoch: -1 };
+  }, []);
+
+  /** Registr indikatorlarının bütün seriyalarını silir (overlay + panel) */
+  const clearStudySeries = useCallback((chart: IChartApi) => {
+    for (const series of studySeriesRef.current) {
+      try { chart.removeSeries(series); } catch { /* onsuz da silinib */ }
+    }
+    studySeriesRef.current = [];
+  }, []);
+
+  /**
+   * Bir StudyPlot-u verilmiş panelə çəkir.
+   * `pointsOnly` xətti gizlədir və yalnız nöqtə qoyur (Parabolic SAR).
+   */
+  const drawStudyPlot = useCallback((
+    chart: IChartApi,
+    plot: StudyPlot,
+    paneIndex: number,
+    fixedRange?: { min: number; max: number },
+  ) => {
+    const common = {
+      title: plot.title,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      ...(fixedRange
+        ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: fixedRange.min, maxValue: fixedRange.max } }) }
+        : {}),
+    };
+
+    if (plot.type === 'histogram') {
+      const series = chart.addSeries(HistogramSeries, { ...common, color: plot.color }, paneIndex);
+      series.setData(plot.data);
+      studySeriesRef.current.push(series);
+      return series;
+    }
+
+    const series = chart.addSeries(LineSeries, {
+      ...common,
+      color: plot.color,
+      lineWidth: plot.lineWidth ?? 2,
+      lineStyle: LINE_STYLE[plot.lineStyle ?? 'solid'],
+      lineVisible: !plot.pointsOnly,
+      pointMarkersVisible: plot.pointsOnly === true,
+      pointMarkersRadius: plot.pointsOnly ? 1.6 : undefined,
+    }, paneIndex);
+    series.setData(plot.data);
+    studySeriesRef.current.push(series);
+    return series;
   }, []);
 
   const addIndicatorPane = useCallback((chart: IChartApi, key: 'rsi' | 'macd' | 'stoch'): number => {
@@ -269,7 +339,23 @@ export function useTradingChart(
     removeSeriesSafe(chart, rsiSeriesRef);
     [macdHistRef, macdLineRef, macdSignalRef].forEach(ref => removeSeriesSafe(chart, ref));
     [stochKRef, stochDRef].forEach(ref => removeSeriesSafe(chart, ref));
+    clearStudySeries(chart);
     clearIndicatorPanes(chart);
+
+    // ── Registr indikatorları: overlay-lər əsas panelə ──
+    const volumeOk = hasRealVolume(klines);
+    setHasVolume(volumeOk);
+    const activeStudies = STUDIES.filter(def => {
+      const state = s.studies?.[def.key];
+      if (!state?.enabled) return false;
+      return !(def.needsVolume && !volumeOk);
+    });
+
+    for (const def of activeStudies.filter(d => d.placement === 'overlay')) {
+      for (const plot of computeStudy(def, klines, s.studies[def.key].params, theme)) {
+        drawStudyPlot(chart, plot, 0);
+      }
+    }
 
     if (s.rsi.enabled && s.rsi.panel && series.rsi.length) {
       const idx = addIndicatorPane(chart, 'rsi');
@@ -321,8 +407,35 @@ export function useTradingChart(
       stochDRef.current.setData(series.stochRsi.d);
     }
 
+    // ── Registr indikatorları: osilatorlar öz panelində ──
+    for (const def of activeStudies.filter(d => d.placement === 'pane')) {
+      const plots = computeStudy(def, klines, s.studies[def.key].params, theme);
+      if (plots.length === 0) continue;
+
+      const pane = chart.addPane();
+      const idx = pane.paneIndex();
+      pane.setHeight(def.paneHeight ?? 100);
+
+      let first: ReturnType<typeof drawStudyPlot> | null = null;
+      for (const plot of plots) {
+        const created = drawStudyPlot(chart, plot, idx, def.fixedRange);
+        first ??= created;
+      }
+
+      for (const level of def.levels ?? []) {
+        first?.createPriceLine({
+          price: level.value,
+          color: level.color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: level.title ?? '',
+        });
+      }
+    }
+
     chart.timeScale().fitContent();
-  }, [removeSeriesSafe, clearIndicatorPanes, addIndicatorPane, legendFromKline]);
+  }, [removeSeriesSafe, clearIndicatorPanes, clearStudySeries, drawStudyPlot, addIndicatorPane, legendFromKline]);
 
   const onKlinesLoadedRef = useRef(onKlinesLoaded);
   onKlinesLoadedRef.current = onKlinesLoaded;
@@ -447,6 +560,7 @@ export function useTradingChart(
       chart.remove();
       chartRef.current = null;
       signalMarkersRef.current = null;
+      studySeriesRef.current = [];
       paneMapRef.current = { rsi: -1, macd: -1, stoch: -1 };
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -533,6 +647,54 @@ export function useTradingChart(
     setSettings(prev => ({ ...prev, ...partial }));
   }, []);
 
+  /** Registr indikatorunu aç/bağla */
+  const toggleStudy = useCallback((key: string) => {
+    setSettings(prev => {
+      const state = prev.studies[key];
+      if (!state) return prev;
+      return {
+        ...prev,
+        studies: { ...prev.studies, [key]: { ...state, enabled: !state.enabled } },
+      };
+    });
+  }, []);
+
+  /** Registr indikatorunun bir parametrini dəyiş */
+  const updateStudyParam = useCallback((key: string, param: string, value: number) => {
+    setSettings(prev => {
+      const state = prev.studies[key];
+      if (!state) return prev;
+      return {
+        ...prev,
+        studies: {
+          ...prev.studies,
+          [key]: { ...state, params: { ...state.params, [param]: value } },
+        },
+      };
+    });
+  }, []);
+
+  /** Bütün indikatorları söndür — "təmiz qrafik" düyməsi */
+  const clearAllIndicators = useCallback(() => {
+    setSettings(prev => ({
+      ...prev,
+      rsi: { ...prev.rsi, enabled: false },
+      macd: { ...prev.macd, enabled: false },
+      stochRsi: { ...prev.stochRsi, enabled: false },
+      superTrend: { ...prev.superTrend, enabled: false },
+      signals: { ...prev.signals, enabled: false },
+      analysis: { supplyZones: false, demandZones: false, patterns: false },
+      studies: Object.fromEntries(
+        Object.entries(prev.studies).map(([k, v]) => [k, { ...v, enabled: false }]),
+      ),
+    }));
+  }, []);
+
+  // Seçim brauzerdə qalır — hər qrafik açılışında sıfırdan seçmək lazım olmasın
+  useEffect(() => {
+    saveChartSettings(settings);
+  }, [settings]);
+
   return {
     containerRef,
     timeframe,
@@ -541,12 +703,16 @@ export function useTradingChart(
     toggleIndicator,
     togglePanel,
     updateSettings,
+    toggleStudy,
+    updateStudyParam,
+    clearAllIndicators,
     loading,
     error,
     legend,
     stInfo,
     zones,
     patterns,
+    hasVolume,
     logScale,
     setLogScale,
     takeScreenshot,

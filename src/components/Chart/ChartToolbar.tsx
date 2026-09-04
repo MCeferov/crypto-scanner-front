@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   CandlestickChart, LineChart, AreaChart, ChevronDown,
-  SlidersHorizontal, Camera, Maximize2, Check, Settings2, Zap,
+  SlidersHorizontal, Camera, Maximize2, Check, Settings2, Zap, EyeOff,
 } from 'lucide-react';
+import { STUDIES, STUDY_GROUP_LABELS } from '../../indicators/library/studies';
+import type { StudyGroup } from '../../indicators/library/types';
 import {
   CHART_TIMEFRAMES,
   SIGNAL_INDICATORS,
@@ -20,6 +22,11 @@ interface ChartToolbarProps {
   onToggleIndicator: (key: IndicatorKey) => void;
   onTogglePanel: (key: 'rsi' | 'macd' | 'stochRsi') => void;
   onUpdateSettings: (partial: Partial<IndicatorSettings>) => void;
+  onToggleStudy: (key: string) => void;
+  onUpdateStudyParam: (key: string, param: string, value: number) => void;
+  onClearAllIndicators: () => void;
+  /** Aktivdə real həcm varmı — yoxdursa həcm indikatorları bağlanır */
+  hasVolume: boolean;
   logScale: boolean;
   onToggleLogScale: () => void;
   onScreenshot: () => void;
@@ -70,7 +77,9 @@ function ToolButton({
   );
 }
 
-function MenuSurface({ children, width = 260 }: { children: React.ReactNode; width?: number }) {
+function MenuSurface({
+  children, width = 260, maxHeight,
+}: { children: React.ReactNode; width?: number; maxHeight?: number }) {
   return (
     <div
       className="absolute top-full left-0 mt-1.5 z-40 rounded-lg border py-1.5 text-xs"
@@ -80,6 +89,7 @@ function MenuSurface({ children, width = 260 }: { children: React.ReactNode; wid
         borderColor: 'var(--chart-border)',
         boxShadow: 'var(--card-shadow)',
         color: 'var(--chart-text)',
+        ...(maxHeight ? { maxHeight, overflowY: 'auto' as const } : {}),
       }}
     >
       {children}
@@ -213,12 +223,14 @@ function SignalSectionLabel({ children, color }: { children: React.ReactNode; co
 
 export function ChartToolbar({
   timeframe, onTimeframeChange, settings, onToggleIndicator, onUpdateSettings,
+  onToggleStudy, onUpdateStudyParam, onClearAllIndicators, hasVolume,
   logScale, onToggleLogScale, onScreenshot, onFullscreen,
 }: ChartToolbarProps) {
   const [typeOpen, setTypeOpen] = useState(false);
   const [indOpen, setIndOpen] = useState(false);
   const [sigOpen, setSigOpen] = useState(false);
   const [expanded, setExpanded] = useState<IndicatorKey | null>(null);
+  const [expandedStudy, setExpandedStudy] = useState<string | null>(null);
 
   const typeRef = useClickOutside(typeOpen, () => setTypeOpen(false));
   const indRef = useClickOutside(indOpen, () => setIndOpen(false));
@@ -234,7 +246,13 @@ export function ChartToolbar({
   };
 
   const currentType = CHART_TYPES.find(ct => ct.key === settings.candleMode) ?? CHART_TYPES[0];
-  const enabledCount = INDICATOR_ROWS.filter(r => settings[r.key].enabled).length;
+  const enabledStudies = STUDIES.filter(d => settings.studies[d.key]?.enabled).length;
+  const enabledCount =
+    INDICATOR_ROWS.filter(r => settings[r.key].enabled).length + enabledStudies;
+
+  const studyGroups = (['trend', 'volatility', 'momentum', 'volume'] as StudyGroup[])
+    .map(group => ({ group, items: STUDIES.filter(d => d.group === group) }))
+    .filter(g => g.items.length > 0);
 
   return (
     <div
@@ -297,7 +315,7 @@ export function ChartToolbar({
           )}
         </ToolButton>
         {indOpen && (
-          <MenuSurface width={280}>
+          <MenuSurface width={290} maxHeight={460}>
             {INDICATOR_ROWS.map(row => {
               const enabled = settings[row.key].enabled;
               const isExpanded = expanded === row.key;
@@ -343,6 +361,80 @@ export function ChartToolbar({
                 </div>
               );
             })}
+            {/* Kitabxana indikatorları — registrdən avtomatik qurulur */}
+            {studyGroups.map(({ group, items }) => (
+              <div key={group}>
+                <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
+                <SignalSectionLabel color="var(--chart-text-dim)">
+                  {STUDY_GROUP_LABELS[group].toUpperCase()}
+                </SignalSectionLabel>
+                {items.map(def => {
+                  const state = settings.studies[def.key];
+                  if (!state) return null;
+                  const blocked = def.needsVolume === true && !hasVolume;
+                  const isOpen = expandedStudy === def.key;
+                  return (
+                    <div key={def.key}>
+                      <div className="flex items-center px-3 py-1.5 gap-2 row-hover" style={{ opacity: blocked ? 0.4 : 1 }}>
+                        <button
+                          type="button"
+                          className="flex items-center gap-2.5 flex-1 text-left"
+                          disabled={blocked}
+                          title={blocked ? 'Bu aktivdə həcm məlumatı yoxdur' : undefined}
+                          onClick={() => onToggleStudy(def.key)}
+                        >
+                          <span
+                            className="w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0"
+                            style={{
+                              background: state.enabled ? 'var(--accent)' : 'transparent',
+                              borderColor: state.enabled ? 'var(--accent)' : 'var(--chart-border)',
+                            }}
+                          >
+                            {state.enabled && <Check size={11} color="#fff" />}
+                          </span>
+                          <span style={{ color: 'var(--chart-text-bright)' }}>{def.label}</span>
+                          {blocked && (
+                            <span className="text-[10px]" style={{ color: 'var(--chart-text-dim)' }}>
+                              həcm yoxdur
+                            </span>
+                          )}
+                        </button>
+                        {def.params.length > 0 && !blocked && (
+                          <button
+                            type="button"
+                            title={`${def.label} parametrləri`}
+                            onClick={() => setExpandedStudy(isOpen ? null : def.key)}
+                            className="p-1 rounded transition-colors"
+                            style={{ color: isOpen ? 'var(--accent)' : 'var(--chart-text-dim)' }}
+                          >
+                            <Settings2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                      {isOpen && (
+                        <div
+                          className="mx-3 mb-2 px-3 py-2.5 rounded-md flex flex-col gap-2"
+                          style={{ background: 'var(--chart-surface)' }}
+                        >
+                          {def.params.map(param => (
+                            <NumInput
+                              key={param.key}
+                              label={param.label}
+                              value={state.params[param.key] ?? param.default}
+                              min={param.min}
+                              max={param.max}
+                              step={param.step}
+                              onChange={v => onUpdateStudyParam(def.key, param.key, v)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+
             <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
             <SignalSectionLabel color="var(--chart-text-dim)">ANALYSIS</SignalSectionLabel>
             <SignalCheckRow
@@ -366,6 +458,20 @@ export function ChartToolbar({
                 analysis: { ...settings.analysis, patterns: !settings.analysis.patterns },
               })}
             />
+
+            {enabledCount > 0 && (
+              <>
+                <div className="my-1 h-px" style={{ background: 'var(--chart-border)' }} />
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left row-hover"
+                  onClick={onClearAllIndicators}
+                >
+                  <EyeOff size={14} style={{ color: 'var(--chart-text-dim)' }} />
+                  <span style={{ color: 'var(--chart-text-bright)' }}>Hamısını söndür</span>
+                </button>
+              </>
+            )}
           </MenuSurface>
         )}
       </div>

@@ -1,4 +1,6 @@
 import type { AssetType } from './asset';
+import { defaultStudySettings } from '../indicators/library/studies';
+import type { StudySettings } from '../indicators/library/types';
 
 export type ChartTimeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
 
@@ -78,23 +80,93 @@ export interface IndicatorSettings {
   };
   superTrend: { period: number; multiplier: number; enabled: boolean };
   signals: SignalEngineConfig;
-  /** Supply/Demand zone + formasiya analizi — Detail Page default ON */
+  /** Supply/Demand zone + formasiya analizi */
   analysis: { supplyZones: boolean; demandZones: boolean; patterns: boolean };
+  /** Kitabxana indikatorları — registr açarına görə vəziyyət + parametrlər */
+  studies: StudySettings;
 }
 
+/**
+ * Qrafik BOŞ açılır — yalnız şamlar və həcm.
+ *
+ * Əvvəl RSI, MACD, Stoch, SuperTrend, zonalar, formasiyalar və siqnal
+ * markerləri hamısı birdən açıq gəlirdi; ekran ilk baxışda oxunmaz olurdu.
+ * İndi hər şey opsionaldır: istifadəçi Indicators / Signals menyusundan
+ * özü seçir, seçim isə brauzerdə yadda qalır (loadChartSettings).
+ */
 export const DEFAULT_INDICATOR_SETTINGS: IndicatorSettings = {
   candleMode: 'normal',
-  rsi: { period: 14, oversold: 30, overbought: 70, enabled: true, panel: true },
-  macd: { fast: 12, slow: 26, signal: 9, enabled: true, panel: true },
+  rsi: { period: 14, oversold: 30, overbought: 70, enabled: false, panel: true },
+  macd: { fast: 12, slow: 26, signal: 9, enabled: false, panel: true },
   volume: { enabled: true },
   stochRsi: {
     rsiPeriod: 14, stochPeriod: 14, kSmooth: 3, dSmooth: 3,
-    oversold: 20, overbought: 80, enabled: true, panel: true,
+    oversold: 20, overbought: 80, enabled: false, panel: true,
   },
-  superTrend: { period: 10, multiplier: 3, enabled: true },
-  signals: DEFAULT_SIGNAL_CONFIG,
-  analysis: { supplyZones: true, demandZones: true, patterns: true },
+  superTrend: { period: 10, multiplier: 3, enabled: false },
+  signals: { ...DEFAULT_SIGNAL_CONFIG, enabled: false },
+  analysis: { supplyZones: false, demandZones: false, patterns: false },
+  studies: defaultStudySettings(),
 };
+
+const SETTINGS_STORAGE_KEY = 'chart:settings:v1';
+
+/**
+ * Yadda saxlanmış seçimi default-un ÜSTÜNƏ qoyur.
+ *
+ * Sahə-sahə birləşdirilir ki, sonradan əlavə olunan indikator və ya parametr
+ * köhnə yaddaşda olmadığına görə itməsin — köhnə qeyd yeni sahələri sadəcə
+ * default dəyərlə alır.
+ */
+export function loadChartSettings(): IndicatorSettings {
+  const base = DEFAULT_INDICATOR_SETTINGS;
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+  } catch {
+    return base;
+  }
+  if (!raw) return base;
+
+  try {
+    const saved = JSON.parse(raw) as Partial<IndicatorSettings>;
+    const studies: StudySettings = { ...base.studies };
+    for (const [key, state] of Object.entries(saved.studies ?? {})) {
+      if (!studies[key]) continue;
+      studies[key] = {
+        enabled: Boolean(state?.enabled),
+        params: { ...studies[key].params, ...(state?.params ?? {}) },
+      };
+    }
+    return {
+      ...base,
+      ...saved,
+      rsi: { ...base.rsi, ...saved.rsi },
+      macd: { ...base.macd, ...saved.macd },
+      volume: { ...base.volume, ...saved.volume },
+      stochRsi: { ...base.stochRsi, ...saved.stochRsi },
+      superTrend: { ...base.superTrend, ...saved.superTrend },
+      signals: {
+        ...base.signals,
+        ...saved.signals,
+        buy: { ...base.signals.buy, ...saved.signals?.buy },
+        sell: { ...base.signals.sell, ...saved.signals?.sell },
+      },
+      analysis: { ...base.analysis, ...saved.analysis },
+      studies,
+    };
+  } catch {
+    return base;
+  }
+}
+
+export function saveChartSettings(settings: IndicatorSettings): void {
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    /* quota / private mode */
+  }
+}
 
 export interface ChartThemeColors {
   background: string;
