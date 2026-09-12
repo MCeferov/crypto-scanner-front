@@ -28,7 +28,26 @@ export interface ChatContext {
   locale?: string;
 }
 
-export class ChatError extends Error {}
+/**
+ * Xətanın növü — UI mesajı i18n-dən seçir.
+ *   network    — backend-ə ümumiyyətlə qoşulmaq olmadı
+ *   auth       — token yoxdur və ya 401 (giriş lazımdır)
+ *   rateLimit  — 429 (istifadəçi limiti və ya LLM provayderi sıxlıqdadır)
+ *   server     — digər HTTP xətaları
+ */
+export type ChatErrorCode = 'network' | 'auth' | 'rateLimit' | 'server';
+
+export class ChatError extends Error {
+  constructor(
+    /** Backend-dən gələn lokallaşdırılmış mətn; boşdursa UI öz i18n mətnini göstərir */
+    message: string,
+    public readonly code: ChatErrorCode = 'server',
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'ChatError';
+  }
+}
 
 interface StreamOptions {
   onDelta: (text: string) => void;
@@ -60,9 +79,15 @@ export async function streamChat(
 ): Promise<string> {
   // Auth token-i əlavə et ki, backend chat-ı istifadəçi başına rate-limit edə
   // bilsin və anonim sui-istifadənin (pullu LLM proxy) qarşısını alsın.
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const token = getStoredToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  // Backend /api/chat üçün auth tələb edir — token yoxdursa sorğu göndərmədən
+  // "giriş lazımdır" deyirik ki, panel yanlış "işləmir" mesajı göstərməsin.
+  if (!token) throw new ChatError('', 'auth', 401);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
 
   let res: Response;
   try {
@@ -74,15 +99,23 @@ export async function streamChat(
     });
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') throw err;
-    throw new ChatError('Köməkçiyə qoşulmaq alınmadı. İnternet bağlantısını yoxlayın.');
+    throw new ChatError('', 'network');
   }
 
   if (!res.ok) {
-    // Backend-in daxili xətasını istifadəçiyə sızdırma — təhlükəsiz mesaj
+    // 401-də backend ingiliscə ümumi mətn ("Authentication required") qaytarır —
+    // onu göstərmirik, UI lokallaşdırılmış "daxil olun" mesajını yazır.
+    if (res.status === 401) throw new ChatError('', 'auth', 401);
+
+    // Qalan hallarda backend xətanı context.locale dilində qaytarır:
+    // chat route `error`, auth/rate-limit middleware isə `message` sahəsində.
+    const data = await res.json().catch(() => null) as
+      { error?: string; message?: string } | null;
+    const fromServer = data?.error ?? data?.message;
     throw new ChatError(
-      res.status === 429
-        ? 'Çox sayda sorğu göndərildi. Bir az sonra yenidən cəhd edin.'
-        : 'Köməkçi hazırda cavab verə bilmir. Bir az sonra yenidən cəhd edin.',
+      fromServer ?? '',
+      res.status === 429 ? 'rateLimit' : 'server',
+      res.status,
     );
   }
 

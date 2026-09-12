@@ -2,21 +2,30 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { MessageCircle, X, Send, Sparkles, RotateCcw } from 'lucide-react';
 import { useLocale } from '../../context/LocaleContext';
-import { streamChat, ChatError, type ChatMessage } from '../../services/chatApi';
+import { streamChat, ChatError, type ChatErrorCode, type ChatMessage } from '../../services/chatApi';
 
 /** Söhbət route dəyişsə də itməsin deyə App kökündə qurulur */
 interface UiMessage extends ChatMessage {
   id: string;
   pending?: boolean;
   error?: boolean;
+  /** Giriş tələb olunan xətada mesajın altında login düyməsi göstərilir */
+  needsLogin?: boolean;
 }
 
-const SUGGESTIONS = [
-  'Bu səhifə nə işə yarayır?',
-  'RSI siqnalı necə işləyir?',
-  'Supertrend nə üçün istifadə olunur?',
-  '"Tanınan fikirlər" bölməsi nədir?',
-];
+const SUGGESTION_KEYS = [
+  'assistant.suggestion1',
+  'assistant.suggestion2',
+  'assistant.suggestion3',
+  'assistant.suggestion4',
+] as const;
+
+const ERROR_KEYS: Record<ChatErrorCode, string> = {
+  network: 'assistant.errorNetwork',
+  auth: 'assistant.errorAuth',
+  rateLimit: 'assistant.errorRateLimit',
+  server: 'assistant.errorServer',
+};
 
 function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -37,8 +46,8 @@ export function AssistantChat() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const [location] = useLocation();
-  const { locale } = useLocale();
+  const [location, navigate] = useLocation();
+  const { locale, t } = useLocale();
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -89,26 +98,35 @@ export function AssistantChat() {
             ? {
                 ...m,
                 pending: false,
-                content: full || m.content
-                  || 'Cavab ala bilmədim. Sualı başqa cür ifadə edin.',
+                content: full || m.content || t('assistant.emptyReply'),
               }
             : m,
         ));
       })
       .catch(err => {
         if (ctrl.signal.aborted) return;
-        const msg = err instanceof ChatError
-          ? err.message
-          : 'Nəsə səhv getdi. Bir az sonra yenidən cəhd edin.';
+        // Backend xətanı artıq context.locale dilində qaytarır — onu olduğu kimi
+        // göstəririk; yalnız mətn gəlmədikdə (şəbəkə/401) öz i18n mətnimizə düşürük.
+        const chatErr = err instanceof ChatError ? err : null;
+        const msg = chatErr?.message
+          || t(chatErr ? ERROR_KEYS[chatErr.code] : 'assistant.errorUnknown');
         setMessages(prev => prev.map(m =>
-          m.id === assistantId ? { ...m, pending: false, error: true, content: msg } : m,
+          m.id === assistantId
+            ? {
+                ...m,
+                pending: false,
+                error: true,
+                content: msg,
+                needsLogin: chatErr?.code === 'auth',
+              }
+            : m,
         ));
       })
       .finally(() => {
         if (abortRef.current === ctrl) abortRef.current = null;
         setBusy(false);
       });
-  }, [busy, messages, location, locale]);
+  }, [busy, messages, location, locale, t]);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -131,7 +149,7 @@ export function AssistantChat() {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        aria-label={open ? 'Köməkçini bağla' : 'AI köməkçi'}
+        aria-label={open ? t('assistant.close') : t('assistant.fab')}
         className="fixed bottom-4 right-4 z-[60] w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95"
         style={{ background: 'var(--accent)', color: '#fff', boxShadow: '0 8px 24px rgba(41,98,255,.35)' }}
       >
@@ -161,14 +179,14 @@ export function AssistantChat() {
               <Sparkles size={15} />
             </span>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>AI Köməkçi</div>
-              <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Sistem və terminlər barədə soruşun</div>
+              <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{t('assistant.title')}</div>
+              <div className="text-[10px]" style={{ color: 'var(--muted)' }}>{t('assistant.subtitle')}</div>
             </div>
             {messages.length > 0 && (
               <button
                 type="button"
                 onClick={reset}
-                title="Söhbəti təmizlə"
+                title={t('assistant.clear')}
                 className="p-1.5 rounded-md transition-colors hover:opacity-80"
                 style={{ color: 'var(--muted)' }}
               >
@@ -182,10 +200,10 @@ export function AssistantChat() {
             {messages.length === 0 ? (
               <div className="space-y-3">
                 <p className="text-xs leading-relaxed px-1" style={{ color: 'var(--muted)' }}>
-                  Salam! Bu sistemdə hansısa tab, bölmə və ya indikator barədə sual verə bilərsiniz.
+                  {t('assistant.intro')}
                 </p>
                 <div className="flex flex-col gap-1.5">
-                  {SUGGESTIONS.map(s => (
+                  {SUGGESTION_KEYS.map(key => t(key)).map(s => (
                     <button
                       key={s}
                       type="button"
@@ -214,6 +232,16 @@ export function AssistantChat() {
                     }
                   >
                     {m.content || (m.pending ? '…' : '')}
+                    {m.needsLogin && (
+                      <button
+                        type="button"
+                        onClick={() => { setOpen(false); navigate('/login'); }}
+                        className="mt-2 block w-full text-center text-xs font-medium px-3 py-1.5 rounded-lg transition-opacity hover:opacity-90"
+                        style={{ background: 'var(--accent)', color: '#fff' }}
+                      >
+                        {t('assistant.login')}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
@@ -232,7 +260,7 @@ export function AssistantChat() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder="Sualınızı yazın…"
+                placeholder={t('assistant.placeholder')}
                 className="flex-1 bg-transparent resize-none outline-none text-xs py-1 max-h-24"
                 style={{ color: 'var(--text)' }}
               />
@@ -240,7 +268,7 @@ export function AssistantChat() {
                 type="button"
                 onClick={() => send(input)}
                 disabled={!input.trim() || busy}
-                aria-label="Göndər"
+                aria-label={t('assistant.send')}
                 className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'var(--accent)', color: '#fff' }}
               >
@@ -248,7 +276,7 @@ export function AssistantChat() {
               </button>
             </div>
             <p className="text-[10px] mt-1.5 px-1" style={{ color: 'var(--dim)' }}>
-              AI səhv edə bilər — vacib qərarları yoxlayın.
+              {t('assistant.disclaimer')}
             </p>
           </div>
         </div>
