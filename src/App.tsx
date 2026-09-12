@@ -6,6 +6,7 @@ import { LocaleProvider } from './context/LocaleContext';
 import { MarketProvider } from './context/MarketContext';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { AccessGate } from './components/auth/AccessGate';
+import { AssistantChat } from './components/Assistant/AssistantChat';
 import { HomePage } from './pages/HomePage';
 import { CoinDetailPage } from './pages/CoinDetailPage';
 import { AssetDetailPage } from './pages/AssetDetailPage';
@@ -30,6 +31,8 @@ function AuthenticatedApp() {
           <Route path="/asset/:type/:symbol" component={AssetDetailPage} />
           <Route component={NotFoundPage} />
         </Switch>
+        {/* Söhbət App kökündədir — route dəyişəndə söhbət tarixçəsi itmir */}
+        <AssistantChat />
       </MarketProvider>
     </ProtectedRoute>
   );
