@@ -4,6 +4,7 @@ import type { AIAnalysisResult } from '../../services/aiAnalysis';
 import { classifySignal } from '../../utils/formatters';
 import { getTrendScoreColor } from '../../utils/colors';
 import { useT } from '../../context/LocaleContext';
+import { NotableVoices } from './NotableVoices';
 
 interface AIAnalysisPanelProps {
   analysis: AIAnalysisResult | null;
@@ -68,6 +69,8 @@ export function AIAnalysisPanel({ analysis, coin, loading }: AIAnalysisPanelProp
         </span>
         <p className="text-xs leading-relaxed" style={{ color: 'var(--chart-text)' }}>{analysis.summary}</p>
       </div>
+
+      {coin && <NotableVoices coin={coin} />}
 
       <div className="p-4 border-b" style={{ borderColor: 'var(--chart-border)' }}>
         <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--chart-text-dim)' }}>
