@@ -65,6 +65,67 @@ function buildSummary(
   return t('detail.summaryNeutral', { bullish, bearish });
 }
 
+/**
+ * Səbəb sətirlərini birləşdirir.
+ *
+ * Panel səbəbləri DÖRD müstəqil mühərrikdən yığır (AI səsvermə, Heikin Ashi,
+ * S/D zonaları, unified setup) və bu mühərriklər eyni faktı öz sözləri ilə
+ * təkrar yazır: HA trendi eyni anda "HA ▲3", "3 consecutive HA green candles"
+ * və "Strong HA uptrend" kimi üç sətir verə bilir. İstifadəçi bunu "eyni
+ * analiz arxa-arxaya təkrarlanır" kimi görür.
+ *
+ * Ona görə: (1) eyni sətir bir dəfə, (2) hər mövzudan ən çox `maxPerTopic`
+ * sətir, (3) ümumi limit. Sıra qorunur — birinci mənbə prioritetlidir.
+ */
+// Sıra vacibdir: "Stoch RSI" sətri RSI mövzusuna düşməməlidir, ona görə
+// daha spesifik nümunələr əvvəldədir.
+const REASON_TOPICS: Array<[string, RegExp]> = [
+  ['stoch', /stoch/i],
+  ['rsi', /\brsi\b/i],
+  ['macd', /\bmacd\b/i],
+  ['ha', /\bha\b|heikin/i],
+  ['zone', /zone|zona|demand|supply/i],
+  ['volume', /volume|həcm/i],
+  ['mtf', /^\s*\d+\s*[mhd]\s*:/i],
+  ['sync', /sync|lider/i],
+  ['trend', /trend|kanal/i],
+];
+
+function reasonTopic(reason: string): string {
+  for (const [topic, re] of REASON_TOPICS) {
+    if (re.test(reason)) return topic;
+  }
+  return reason.toLowerCase().trim();
+}
+
+export function mergeReasons(
+  groups: string[][],
+  { maxPerTopic = 2, limit = 10 }: { maxPerTopic?: number; limit?: number } = {},
+): string[] {
+  const seen = new Set<string>();
+  const perTopic = new Map<string, number>();
+  const out: string[] = [];
+
+  for (const group of groups) {
+    for (const raw of group) {
+      const reason = raw.trim();
+      if (!reason) continue;
+      const key = reason.toLowerCase().replace(/\s+/g, ' ');
+      if (seen.has(key)) continue;
+
+      const topic = reasonTopic(reason);
+      const used = perTopic.get(topic) ?? 0;
+      if (used >= maxPerTopic) continue;
+
+      seen.add(key);
+      perTopic.set(topic, used + 1);
+      out.push(reason);
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
 export function analyzeFromCoin(coin: CoinData, t: TranslateFn): AIAnalysisResult {
   const signalResult = computeSignal({
     rsi15m: coin.rsi15m,
@@ -160,10 +221,13 @@ export function analyzeFromCoin(coin: CoinData, t: TranslateFn): AIAnalysisResul
     },
   ];
 
-  const reasons = [...signalResult.reasons];
-  if (coin.haReasons.length > 0) reasons.push(...coin.haReasons.slice(0, 2));
-  if (coin.zoneSignalReasons.length > 0) reasons.push(...coin.zoneSignalReasons.slice(0, 2));
-  if (coin.setupReasons.length > 0) reasons.push(...coin.setupReasons.slice(0, 2));
+  // Dörd mühərrikin səbəbləri — mergeReasons() eyni faktın təkrarını kəsir
+  const reasons = mergeReasons([
+    signalResult.reasons,
+    coin.setupReasons,
+    coin.haReasons,
+    coin.zoneSignalReasons,
+  ]);
 
   return {
     signal: signalResult.signal,
@@ -212,6 +276,7 @@ export function analyzeFromKlines(
     trendScore, signal: 'NEUTRAL', signalReasons: [],
     zonePosition: null, zoneSignal: 'ZONE_NEUTRAL', zoneBreakoutSignal: 'NEUTRAL',
     zoneBreakoutReasons: [], zoneSignalReasons: [],
+    breakout: null,
     demandZonePrice: null, supplyZonePrice: null,
     stopLoss: null, takeProfit: null, riskReward: null,
     haTrend: haResult.trend, haConsecutive: haResult.consecutive,

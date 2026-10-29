@@ -23,7 +23,10 @@ import type { Kline } from '../../services/binanceApi';
 import type { ChartThemeColors } from '../../types/chart';
 import type { SignalDir } from '../signalLatch';
 import { toPoints, type StudyDef, type StudyPlot, type StudySettings } from './types';
-import { NA, atr, ema, highest, lowest, rma, sma, stdev, trueRange } from './math';
+import { PRO_STUDIES } from './studiesPro';
+import {
+  NA, atr, cci, dmi, ema, highest, lowest, mfi, rma, sma, stdev, trueRange,
+} from './math';
 
 const C = {
   fast: '#2962ff',
@@ -189,64 +192,15 @@ function calcParabolicSar(k: Kline[], step: number, max: number): number[] {
 
 function calcDmi(k: Kline[], period: number) {
   const { high, low, close } = ohlc(k);
-  const n = k.length;
-  const plusDM = new Array<number>(n).fill(0);
-  const minusDM = new Array<number>(n).fill(0);
-
-  for (let i = 1; i < n; i++) {
-    const up = high[i] - high[i - 1];
-    const down = low[i - 1] - low[i];
-    plusDM[i] = up > down && up > 0 ? up : 0;
-    minusDM[i] = down > up && down > 0 ? down : 0;
-  }
-
-  const smTr = rma(trueRange(high, low, close), period);
-  const diPlus = rma(plusDM, period).map((v, i) => (fin(v) && smTr[i] > 0 ? (100 * v) / smTr[i] : NA));
-  const diMinus = rma(minusDM, period).map((v, i) => (fin(v) && smTr[i] > 0 ? (100 * v) / smTr[i] : NA));
-
-  const dx = diPlus.map((v, i) => {
-    const sum = v + diMinus[i];
-    return fin(v) && fin(diMinus[i]) && sum > 0 ? (100 * Math.abs(v - diMinus[i])) / sum : NA;
-  });
-
-  // rma() NaN qəbul etmir — warm-up kəsilir, nəticə öz yerinə qaytarılır
-  const adx = new Array<number>(n).fill(NA);
-  const firstValid = dx.findIndex(fin);
-  if (firstValid >= 0) {
-    const tail = rma(dx.slice(firstValid), period);
-    for (let i = 0; i < tail.length; i++) adx[firstValid + i] = tail[i];
-  }
-
-  return { adx, diPlus, diMinus };
+  return dmi(high, low, close, period);
 }
 
 function calcCci(k: Kline[], period: number): number[] {
-  const tp = typicalPrice(k);
-  const avg = sma(tp, period);
-  const out = new Array<number>(k.length).fill(NA);
-  for (let i = period - 1; i < tp.length; i++) {
-    let dev = 0;
-    for (let j = 0; j < period; j++) dev += Math.abs(tp[i - j] - avg[i]);
-    dev /= period;
-    out[i] = dev === 0 ? 0 : (tp[i] - avg[i]) / (0.015 * dev);
-  }
-  return out;
+  return cci(typicalPrice(k), period);
 }
 
 function calcMfi(k: Kline[], period: number): number[] {
-  const tp = typicalPrice(k);
-  const out = new Array<number>(k.length).fill(NA);
-  for (let i = period; i < k.length; i++) {
-    let pos = 0;
-    let neg = 0;
-    for (let j = i - period + 1; j <= i; j++) {
-      const flow = tp[j] * k[j].volume;
-      if (tp[j] > tp[j - 1]) pos += flow;
-      else if (tp[j] < tp[j - 1]) neg += flow;
-    }
-    out[i] = neg === 0 ? (pos === 0 ? 50 : 100) : 100 - 100 / (1 + pos / neg);
-  }
-  return out;
+  return mfi(typicalPrice(k), k.map(x => x.volume), period);
 }
 
 function calcWilliamsR(k: Kline[], period: number): number[] {
@@ -762,6 +716,8 @@ export const STUDIES: StudyDef[] = [
   bollingerStudy, keltnerStudy, donchianStudy, atrStudy,
   adxStudy, cciStudy, williamsStudy,
   vwapStudy, mfiStudy, obvStudy,
+  // İcma indikatorları (UT Bot, Range Filter, QQE, AlphaTrend, ...)
+  ...PRO_STUDIES,
 ];
 
 /** Siqnal mühərrikində iştirak edə bilən indikatorlar */

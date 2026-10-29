@@ -32,6 +32,7 @@ import { getLatestSuperTrend } from '../indicators/supertrend';
 import { calculateTrendScore } from '../indicators/trendScore';
 import { computeSignal, type Signal } from '../indicators/aiSignal';
 import { analyzeSupplyDemand, type ZoneBreakoutSignal, type ZonePosition, type ZoneSignal } from '../indicators/supplyDemand';
+import { detectBreakoutEvent, type BreakoutEvent } from '../indicators/breakoutEvents';
 import { analyzeHeikinAshi, type HaSignal } from '../indicators/heikinAshi';
 import { type SetupSignal } from '../indicators/setupSignal';
 import type { ReversalRisk, MtfAlignment } from '../indicators/reversalRisk';
@@ -127,6 +128,11 @@ export interface CoinData {
   zoneBreakoutSignal: ZoneBreakoutSignal;
   zoneBreakoutReasons: string[];
   zoneSignalReasons: string[];
+  /**
+   * Qırılma radarı — ən son struktur hadisəsi (dəstək/dirənc qırıldı və ya
+   * qırılmaya yaxınlaşır). Hadisə yoxdursa null.
+   */
+  breakout: BreakoutEvent | null;
   /** Ən yaxın demand zona qiyməti (yuxarı kənar) */
   demandZonePrice: number | null;
   /** Ən yaxın supply zona qiyməti (aşağı kənar) */
@@ -385,6 +391,10 @@ function computeIndicators(
     ? indicatorK
     : (k15m.length >= 20 ? k15m : primaryK);
   const zoneKlines = haKlines;
+  // Qırılma xəbəri hansı TF-dən oxunub — UI etiketi üçün
+  const zoneTf = indicatorK.length >= 20
+    ? indicatorTf
+    : (k15m.length >= 20 ? '15m' : primaryTf);
 
   const indicatorCloses = indicatorK.map(k => k.close);
 
@@ -492,6 +502,13 @@ function computeIndicators(
     haConsecutive: haResult.consecutive,
   });
 
+  const breakout = detectBreakoutEvent({
+    klines: zoneKlines,
+    price,
+    atr,
+    tf: zoneTf,
+  });
+
   const mtfResult = computeMultiTimeframeAnalysis(klineMap, activeTfs);
 
   const emptyAges = {
@@ -516,6 +533,7 @@ function computeIndicators(
     zoneSignal: zoneResult.zoneSignal,
     zoneBreakoutSignal: zoneResult.zoneBreakoutSignal,
     zoneBreakoutReasons: zoneResult.zoneBreakoutReasons,
+    breakout,
     zoneSignalReasons: zoneResult.zoneSignalReasons,
     demandZonePrice: zoneResult.nearestDemand?.top ?? null,
     supplyZonePrice: zoneResult.nearestSupply?.bottom ?? null,
@@ -574,6 +592,7 @@ function buildEmptyCoinFields(): Omit<CoinData, keyof ReturnType<typeof createAs
     trendScore: 50, signal: 'NEUTRAL', signalReasons: [],
     zonePosition: null, zoneSignal: 'ZONE_NEUTRAL', zoneBreakoutSignal: 'NEUTRAL',
     zoneBreakoutReasons: [], zoneSignalReasons: [],
+    breakout: null,
     demandZonePrice: null, supplyZonePrice: null,
     stopLoss: null, takeProfit: null, riskReward: null,
     haTrend: 0, haConsecutive: 0, haSignal: 'NEUTRAL', haReasons: [],

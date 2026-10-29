@@ -1,6 +1,7 @@
 import React from 'react';
 import { Header } from '../components/Layout/Header';
 import { MarketSummary } from '../components/Dashboard/MarketSummary';
+import { BreakoutFeed } from '../components/Dashboard/BreakoutFeed';
 import { SearchBox } from '../components/Controls/SearchBox';
 import { CategoryTabs } from '../components/Controls/CategoryTabs';
 import { FilterControls } from '../components/Controls/FilterControls';
@@ -37,6 +38,8 @@ export function HomePage() {
       </section>
 
       <MarketSummary />
+
+      <BreakoutFeed />
 
       {showIndicatorColumns && (
         <div

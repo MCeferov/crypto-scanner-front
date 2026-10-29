@@ -148,3 +148,96 @@ export function trueRange(high: number[], low: number[], close: number[]): numbe
 export function atr(high: number[], low: number[], close: number[], period: number): number[] {
   return rma(trueRange(high, low, close), period);
 }
+
+/** Wilder RSI — giriş ilə eyni uzunluqda, warm-up NaN */
+export function rsi(values: number[], period: number): number[] {
+  const n = values.length;
+  const out = new Array<number>(n).fill(NA);
+  if (period < 1 || n < period + 1) return out;
+
+  const gains = new Array<number>(n).fill(0);
+  const losses = new Array<number>(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const ch = values[i] - values[i - 1];
+    gains[i] = ch > 0 ? ch : 0;
+    losses[i] = ch < 0 ? -ch : 0;
+  }
+  // i=0-da dəyişiklik yoxdur — Wilder ortalaması 1..period aralığından başlayır
+  const ag = rma(gains.slice(1), period);
+  const al = rma(losses.slice(1), period);
+  for (let i = 0; i < ag.length; i++) {
+    if (!isNum(ag[i]) || !isNum(al[i])) continue;
+    // Tam düz seriya (nə qazanc, nə itki) neytraldır — 100 deyil
+    out[i + 1] = al[i] === 0
+      ? (ag[i] === 0 ? 50 : 100)
+      : 100 - 100 / (1 + ag[i] / al[i]);
+  }
+  return out;
+}
+
+/** Commodity Channel Index — tipik qiymətin orta mütləq kənarlaşması ilə */
+export function cci(typical: number[], period: number): number[] {
+  const out = new Array<number>(typical.length).fill(NA);
+  const avg = sma(typical, period);
+  for (let i = period - 1; i < typical.length; i++) {
+    let dev = 0;
+    for (let j = 0; j < period; j++) dev += Math.abs(typical[i - j] - avg[i]);
+    dev /= period;
+    out[i] = dev === 0 ? 0 : (typical[i] - avg[i]) / (0.015 * dev);
+  }
+  return out;
+}
+
+/** Money Flow Index — həcmlə çəkilmiş RSI analoqu */
+export function mfi(typical: number[], volume: number[], period: number): number[] {
+  const out = new Array<number>(typical.length).fill(NA);
+  for (let i = period; i < typical.length; i++) {
+    let pos = 0;
+    let neg = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      const flow = typical[j] * volume[j];
+      if (typical[j] > typical[j - 1]) pos += flow;
+      else if (typical[j] < typical[j - 1]) neg += flow;
+    }
+    out[i] = neg === 0 ? (pos === 0 ? 50 : 100) : 100 - 100 / (1 + pos / neg);
+  }
+  return out;
+}
+
+/** Wilder DMI/ADX — +DI, -DI və ADX */
+export function dmi(
+  high: number[],
+  low: number[],
+  close: number[],
+  period: number,
+): { adx: number[]; diPlus: number[]; diMinus: number[] } {
+  const n = high.length;
+  const plusDM = new Array<number>(n).fill(0);
+  const minusDM = new Array<number>(n).fill(0);
+
+  for (let i = 1; i < n; i++) {
+    const up = high[i] - high[i - 1];
+    const down = low[i - 1] - low[i];
+    plusDM[i] = up > down && up > 0 ? up : 0;
+    minusDM[i] = down > up && down > 0 ? down : 0;
+  }
+
+  const smTr = rma(trueRange(high, low, close), period);
+  const diPlus = rma(plusDM, period).map((v, i) => (isNum(v) && smTr[i] > 0 ? (100 * v) / smTr[i] : NA));
+  const diMinus = rma(minusDM, period).map((v, i) => (isNum(v) && smTr[i] > 0 ? (100 * v) / smTr[i] : NA));
+
+  const dx = diPlus.map((v, i) => {
+    const sum = v + diMinus[i];
+    return isNum(v) && isNum(diMinus[i]) && sum > 0 ? (100 * Math.abs(v - diMinus[i])) / sum : NA;
+  });
+
+  // rma() NaN qəbul etmir — warm-up kəsilir, nəticə öz yerinə qaytarılır
+  const adx = new Array<number>(n).fill(NA);
+  const firstValid = dx.findIndex(isNum);
+  if (firstValid >= 0) {
+    const tail = rma(dx.slice(firstValid), period);
+    for (let i = 0; i < tail.length; i++) adx[firstValid + i] = tail[i];
+  }
+
+  return { adx, diPlus, diMinus };
+}
