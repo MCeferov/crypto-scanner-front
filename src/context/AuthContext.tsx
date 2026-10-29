@@ -47,10 +47,9 @@ export function useAuth() {
 }
 
 export function mapAuthError(err: unknown): string {
-  if (err instanceof AuthApiError) {
-    if (err.status === 401) return 'Session expired — please sign in again';
-    return err.message;
-  }
+  // Only used by login/signup forms, where a 401 means rejected credentials,
+  // not an expired session — show the server's own message.
+  if (err instanceof AuthApiError) return err.message;
   if (err instanceof Error) return err.message;
   return 'An unexpected error occurred';
 }
